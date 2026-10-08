@@ -18,6 +18,36 @@ export class WoApiError extends Error {
 type DocumentoWO = FacturaWO | ReciboWO;
 
 /**
+ * World Office no ofrece un login usuario/contraseña por API (a diferencia de
+ * Medifolios): el único token válido es el que se copia a mano desde su propia
+ * interfaz (Configuración › Configuración General › API), con una fecha de
+ * expiración que puede llegar hasta el vencimiento de la licencia. Como quien
+ * usa esta pestaña no es técnico, se guarda en localStorage para que no tenga
+ * que ir a buscar y pegar ese token cada vez — con "Cerrar sesión de World
+ * Office" como salida explícita para cuando el equipo se comparte.
+ */
+const LS_KEY = 'rehabilitar_wo_token_v1';
+
+interface TokenGuardado { token: string; authPrefix: string }
+
+function leerTokenGuardado(): TokenGuardado | null {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    return d && typeof d.token === 'string' ? { token: d.token, authPrefix: typeof d.authPrefix === 'string' ? d.authPrefix : WO_CONFIG.authPrefix } : null;
+  } catch { return null; }
+}
+
+function guardarToken(token: string, authPrefix: string): void {
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ token, authPrefix })); } catch { /* localStorage no disponible: se sigue pidiendo el token cada vez */ }
+}
+
+function borrarTokenGuardado(): void {
+  try { localStorage.removeItem(LS_KEY); } catch { /* nada que borrar */ }
+}
+
+/**
  * Cliente de la API de World Office + orquestador de "preparar → conectar →
  * simular/enviar". Migrado 1:1 desde el bloque <script> final de index.html
  * (secciones 4 a 7: CLIENTE DE LA API, ARMADO DE PAYLOADS, ENVÍO, PLANTILLA EXCEL).
@@ -119,6 +149,9 @@ export class WorldOfficeService {
     return cat;
   }
 
+  /** Token guardado de una sesión anterior (si existe), para precargar el formulario sin pedirlo de nuevo. */
+  tokenGuardado(): TokenGuardado | null { return leerTokenGuardado(); }
+
   async conectar(token: string, authPrefix: string): Promise<{ ok: boolean; mensaje: string }> {
     this.token.set(token.trim());
     WO_CONFIG.authPrefix = authPrefix;
@@ -127,15 +160,26 @@ export class WorldOfficeService {
     try {
       const cat = await this.cargarCatalogos();
       this.cat.set(cat);
+      guardarToken(this.token(), authPrefix);
       return { ok: true, mensaje: `Conectado. ${Object.keys(cat.empresas).length} empresa(s), ${Object.keys(cat.prefijos.FV).length} prefijo(s) FV, ${Object.keys(cat.prefijos.RC).length} prefijo(s) RC.` };
     } catch (e) {
       this.cat.set(null);
       if (e instanceof WoApiError) {
-        if (e.status === 401 || e.status === 403) return { ok: false, mensaje: `World Office rechazó el token (${e.status}). Revisa que esté vigente y el prefijo «WO ».` };
+        if (e.status === 401 || e.status === 403) { borrarTokenGuardado(); return { ok: false, mensaje: `World Office rechazó el token (${e.status}). Revisa que esté vigente y el prefijo «WO ».` }; }
         if (e.status === 404) return { ok: false, mensaje: 'No se encontró /wo: revisa el rewrite de vercel.json y vuelve a desplegar.' };
       }
       return { ok: false, mensaje: 'No se pudo conectar: ' + (e instanceof Error ? e.message : String(e)) };
     }
+  }
+
+  /** Olvida el token guardado y desconecta — para cuando el equipo se comparte. */
+  cerrarSesion(): void {
+    borrarTokenGuardado();
+    this.token.set('');
+    this.cat.set(null);
+    this.prep.set(null);
+    this.log.set([]);
+    this.cache = { terceros: {}, inventarios: {}, cuentas: {} };
   }
 
   // ---------------- ARMADO DE PAYLOADS ----------------

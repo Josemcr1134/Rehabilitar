@@ -43,6 +43,26 @@ preguntó explícitamente al usuario antes de implementarlo así y la respuesta 
 veces (incluir "Subir archivos" en el guard a pesar de la advertencia). No "arreglar" esto sin
 volver a preguntar.
 
+## ⚠️ Desviación deliberada: el token de World Office se guarda en el navegador
+
+El `index.html` original pedía el token de World Office en pantalla cada vez y nunca lo guardaba
+(CLAUDE.md sección 15: *"Se pega en pantalla cada vez; no se guarda"*). En la migración a Angular
+esto cambió a propósito (decisión de producto, 2026-10-07), después de revisar la documentación
+oficial de World Office (developer.worldoffice.cloud): **no existe un login usuario/contraseña por
+API como el de Medifolios** — el único token válido se copia a mano desde la interfaz web de World
+Office (Configuración › Configuración General › API), con una expiración que puede fijarse hasta el
+vencimiento de la licencia. Como quien usa esta pestaña no es técnico, pedir ese token en cada
+sesión era la única fricción real que se podía reducir.
+
+Implementación (`core/services/world-office.service.ts`): el token se guarda en
+`localStorage` (clave `rehabilitar_wo_token_v1`) tras un `conectar()` exitoso, se borra solo si
+World Office lo rechaza (401/403) o si la persona hace clic en **"Cerrar sesión de World Office"**
+(botón visible en la página, llama a `wo.cerrarSesion()`). Al volver a la página, si hay un token
+guardado y no hay catálogos cargados en memoria, `WorldOffice` (el componente) reconecta solo, sin
+que la persona tenga que hacer nada. Riesgo aceptado a propósito: cualquiera con acceso a ese
+navegador puede crear/anular documentos reales en la contabilidad sin que se le vuelva a pedir el
+token — por eso el botón de cerrar sesión está siempre visible mientras hay una sesión activa.
+
 ## Arquitectura
 
 ```
@@ -120,6 +140,12 @@ para no migrar funcionalidad fantasma.
    aquí reproduce la lógica tal cual estaba en index.html, pero esa lógica en sí nunca se probó
    contra la API real de World Office (solo contra una API simulada). "Conectar" → revisar catálogos
    en rojo → "Simular" → enviar 2-3 documentos.
+4. **Desplegar en Vercel** — `vercel.json` ya existe en esta carpeta, pero como el proyecto vive en
+   `LILIAN/rehabilitar-angular/` y `LILIAN/` tiene su propio `vercel.json` (el del index.html en
+   producción), el proyecto de Vercel para Angular debe tener **Root Directory =
+   `rehabilitar-angular`**, framework Angular, build `npm run build`. Si se reutiliza el mismo
+   proyecto de Vercel del index.html, cambiar el Root Directory reemplaza el sitio en producción —
+   hacerlo solo cuando se decida el reemplazo.
 
 ## Cómo correr
 
@@ -131,10 +157,54 @@ npm run build         # build de producción — rutas con loadComponent (lazy) 
                        # exceljs fuera del bundle inicial (budget de 1 MB)
 ```
 
-`proxy.conf.json` reenvía `/api/*` → Medifolios y `/wo/*` → World Office, mismos destinos que los
-dos rewrites de `vercel.json` (los globs con `/*` son necesarios: un contexto bare `"/wo"` hace
-match por prefijo y secuestra la ruta Angular `/world-office`). Para producción, el equivalente de
-`vercel.json` todavía no se creó en este proyecto (pendiente cuando se decida desplegarlo).
+### Conexión a las dos APIs (environments + proxy + vercel.json)
+
+Tres piezas que deben mantenerse sincronizadas a mano:
+
+| Archivo | Lo lee | Qué define |
+|---|---|---|
+| `src/environments/environment.ts` / `environment.prod.ts` | el código (servicios) | `medifoliosApiBase: '/api'`, `worldOfficeApiBase: '/wo'` — el prefijo al que llaman `MedifoliosApiService` y `WO_CONFIG.apiBase` |
+| `proxy.conf.json` | `ng serve` (desarrollo) | reescribe `/api/**` → `balanceo-reportes.medifolios.net/ci4/public/v2` y `/wo/**` → `api.worldoffice.cloud/api/v1` |
+| `vercel.json` | Vercel (producción) | los mismos dos rewrites + fallback SPA `/(.*)` → `/index.html` |
+
+Los prefijos son iguales en desarrollo y producción a propósito: lo que cambia entre entornos no es
+la ruta que llama el código, sino quién la reescribe hacia el host real. `angular.json` activa
+`environment.prod.ts` con `fileReplacements` en la configuración `production`.
+
+#### ⚠️ `proxy.conf.json` necesita `**`, no `*` (2026-10-08)
+
+Un contexto bare `"/wo"` hace match por prefijo y secuestra la ruta Angular `/world-office` — eso se
+detectó primero y se "arregló" cambiando a `/wo/*` / `/api/*`. Esa forma con **una sola** estrella
+resultó ser un bug distinto: en el motor de glob que usa `@angular/build:dev-server`, `*` no cruza
+`/`, así que solo igualaba rutas de **un** segmento (`/api/auth`, `/wo/documentos`) y dejaba pasar
+cualquier ruta real de dos o más segmentos (`/api/citas/listar`, `/api/consumos/buscar`,
+`/wo/empresas/listarEmpresas`, prácticamente todo lo que llaman `MedifoliosApiService` y
+`WorldOfficeService`) sin proxear — esas peticiones caían al fallback de SPA del dev-server, que
+devuelve el `index.html` de Angular con status 200. El síntoma en el navegador: la pestaña Network
+mostraba un 200 "exitoso", pero el cuerpo era HTML, no JSON, así que la consulta parecía traer datos
+cuando en realidad nunca llegó a Medifolios/World Office.
+
+**La prueba de humo que se corrió cuando se introdujo el bug (sección anterior de este documento)
+no lo detectó** porque solo probó `/api/auth` y `/wo/documentos` — ambas de un segmento, las únicas
+que sí funcionaban. Lección: al probar un proxy, probar con una ruta real con dos o más segmentos,
+no solo la ruta más corta que exista.
+
+**Arreglo:** `/api/**` y `/wo/**` (doble estrella: sí cruza `/`, sigue exigiendo el `/` después del
+prefijo así que `/world-office` sigue sin matchear). Verificado con los tres casos a la vez:
+`/api/citas/listar` y `/wo/empresas/listarEmpresas` (multi-segmento) llegan ahora al backend real
+(401 sin token válido, no HTML), `/api/auth` y `/wo/documentos` (un segmento) siguen igual, y
+`/world-office` sigue sirviendo la SPA. `vercel.json` no tenía este problema: usa la sintaxis de
+Vercel `:ruta*`, que es otro motor de matching y sí soporta multi-segmento de por sí.
+
+Notas de `vercel.json` (diferencias con el de `LILIAN/vercel.json` del index.html original):
+- **Fallback SPA** `/(.*)` → `/index.html`, en último lugar: el original no lo necesitaba porque era
+  una sola página; Angular tiene rutas reales (`/conciliar`, `/world-office`…) que sin esto darían
+  404 al recargar. Vercel aplica el primer rewrite que coincide, así que `/api` y `/wo` van antes.
+- **`outputDirectory: dist/rehabilitar-angular/browser`** — el builder `@angular/build:application`
+  deja los archivos estáticos un nivel más abajo que el builder antiguo.
+- Se quitaron las reglas de caché de `/` y `/world-office.js`: ese archivo no existe en el build de
+  Angular, y los chunks JS/CSS llevan hash en el nombre (`outputHashing: all`), así que solo
+  `index.html` necesita `must-revalidate`.
 
 ## Decisiones tomadas sin preguntar (ajustables)
 

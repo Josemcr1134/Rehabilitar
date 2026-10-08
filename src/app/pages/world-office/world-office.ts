@@ -27,6 +27,8 @@ export class WorldOffice {
 
   token = '';
   authPrefix = WO_CONFIG.authPrefix;
+  /** true si el token viene de una sesión anterior (se precargó solo, no lo acaba de escribir la persona). */
+  readonly sesionRecordada = signal(false);
 
   readonly conservarNumero = signal(true);
   readonly contabilizar = signal(true);
@@ -78,6 +80,16 @@ export class WorldOffice {
     return filas;
   });
 
+  constructor() {
+    const guardado = this.wo.tokenGuardado();
+    if (guardado && !this.wo.cat()) {
+      this.token = guardado.token;
+      this.authPrefix = guardado.authPrefix;
+      this.sesionRecordada.set(true);
+      this.conectar();
+    }
+  }
+
   preparar() {
     const p = prepararDocumentos(this.caja() || []);
     this.wo.prep.set(p);
@@ -91,6 +103,17 @@ export class WorldOffice {
     const r = await this.wo.conectar(this.token, this.authPrefix);
     this.mensaje.set(r.mensaje);
     this.bloqueado.set(false);
+    if (!r.ok) this.sesionRecordada.set(false);
+  }
+
+  /** Olvida el token guardado en este navegador — para cuando el equipo se comparte. */
+  cerrarSesionWO() {
+    this.wo.cerrarSesion();
+    this.token = '';
+    this.authPrefix = WO_CONFIG.authPrefix;
+    this.sesionRecordada.set(false);
+    this.deseleccionados.set(new Set());
+    this.mensaje.set('Sesión de World Office cerrada en este navegador.');
   }
 
   seleccionado(doc: string): boolean { return !this.deseleccionados().has(doc); }
