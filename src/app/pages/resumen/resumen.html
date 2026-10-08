@@ -1,0 +1,64 @@
+@if (!P()) {
+  <section class="card">
+    <h2>5. Resumen ejecutivo</h2>
+    <p class="hint">Concilia primero en la página "Conciliar" para ver el resumen.</p>
+  </section>
+} @else {
+  <section class="card">
+    <h2>5. Resumen ejecutivo <span class="subt">— hoja «Resumen» del Excel</span></h2>
+    <div class="subtitulo">Indicadores de conciliación</div>
+    <div class="kpi-grid">
+      <app-kpi-card [valor]="fmt(P()!.totalVenta)" etiqueta="Total venta (agenda)" />
+      <app-kpi-card [valor]="P()!.sesiones" etiqueta="Total sesiones" />
+      <app-kpi-card [valor]="fmt(P()!.pac)" etiqueta="Asume paciente" />
+      <app-kpi-card [valor]="fmt(P()!.ent)" etiqueta="Asume entidad" />
+      <app-kpi-card
+        [valor]="k()!.registrosAgenda + ' / ' + k()!.registrosCaja + ' / ' + k()!.registrosConsumo"
+        etiqueta="Registros Agenda / Caja / Consumo"
+      />
+      <app-kpi-card [valor]="k()!.inconsistencias" etiqueta="Inconsistencias" [estado]="k()!.inconsistencias ? 'bad' : 'ok'" />
+    </div>
+
+    <div class="subtitulo">Financiero (COP)</div>
+    <div class="kpi-grid">
+      <app-kpi-card [valor]="fmt(P()!.recaudoAgenda)" etiqueta="Recaudo de agenda" estado="ok" />
+      <app-kpi-card [valor]="fmt(P()!.recaudoReal)" etiqueta="Recaudo real (caja)" estado="ok" />
+      <app-kpi-card [valor]="fmt(O()!.totalCaja)" etiqueta="Total movido en caja" />
+      <app-kpi-card [valor]="fmt(P()!.pagoDelDia)" etiqueta="Pago del día (paciente)" />
+      <app-kpi-card [valor]="fmt(P()!.anticipoDescuento)" etiqueta="Anticipo descuento" />
+      <app-kpi-card [valor]="fmt(P()!.credito)" etiqueta="Crédito deuda" />
+      <app-kpi-card [valor]="cuadraTarifa() ? 'CUADRA' : 'NO CUADRA'" etiqueta="TAR = PAC + ENT" [estado]="cuadraTarifa() ? 'ok' : 'bad'" />
+      <app-kpi-card [valor]="O()!.agenda.detectadas + ' / ' + O()!.agenda.sesiones" etiqueta="Citas con tarifa detectada" />
+    </div>
+
+    <div class="subtitulo">Desglose tarifario detectado</div>
+    <table class="fin-table">
+      <thead><tr><th>Ingresos por venta de reporte de agenda</th><th>COP</th><th>Observación</th></tr></thead>
+      <tbody>
+        @for (f of filasDesglose(); track f.lab) {
+          <tr>
+            <td [style.font-weight]="f.negrita ? 700 : 400" [style.padding-left.px]="f.negrita ? 0 : 18">{{ f.lab }}</td>
+            <td [style.font-weight]="f.negrita ? 700 : 400">{{ f.esNumero ? f.val : fmt(f.val) }}</td>
+            <td class="hint">{{ f.nota }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    <h3 class="subt-h3">Recaudo por forma de pago — archivo de caja</h3>
+    <table class="fin-table">
+      <thead><tr><th>Forma de pago</th><th>COP</th></tr></thead>
+      <tbody>
+        @for (f of O()!.formasPago; track f.forma) {
+          <tr><td>{{ f.forma }}</td><td>{{ fmt(f.valor) }}</td></tr>
+        }
+        <tr><td style="font-weight:700;">Total general</td><td style="font-weight:700;">{{ fmt(O()!.totalCaja) }}</td></tr>
+        @if (O()!.conNitMov) {
+          <tr><td colspan="2" class="hint">
+            El pago del día incluye {{ O()!.conNitMov }} movimiento(s) por {{ fmt(O()!.conNit) }} de terceros con NIT (entidades pagando en caja).
+          </td></tr>
+        }
+      </tbody>
+    </table>
+  </section>
+}

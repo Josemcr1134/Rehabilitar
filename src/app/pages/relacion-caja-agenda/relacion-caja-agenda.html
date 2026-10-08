@@ -1,0 +1,51 @@
+@if (!t()) {
+  <section class="card">
+    <h2>11. Relación caja ↔ agenda</h2>
+    <p class="hint">Concilia primero en la página "Conciliar".</p>
+  </section>
+} @else {
+  <section class="card">
+    <h2>11. Relación caja ↔ agenda <span class="subt">— hoja «relacion_caja_agenda» del Excel</span></h2>
+    <p class="hint">Compara el archivo de caja contra el de agenda, tomando la agenda como referencia. Cuenta <strong>documentos</strong>, no movimientos: una factura pagada en dos formas de pago es un solo cobro.</p>
+    <div class="kpi-grid">
+      <app-kpi-card [valor]="t()!.citas" etiqueta="Citas agendadas" />
+      <app-kpi-card [valor]="t()!.documentos" etiqueta="Cobros en caja (documentos)" />
+      <app-kpi-card
+        [valor]="(t()!.documentos - t()!.citas > 0 ? '+' : '') + (t()!.documentos - t()!.citas)"
+        etiqueta="Diferencia cobros − citas"
+        [estado]="t()!.documentos - t()!.citas !== 0 ? 'warn' : 'ok'"
+      />
+      <app-kpi-card [valor]="t()!.movimientos + ' / ' + t()!.divididas" etiqueta="Movimientos / facturas divididas" />
+      <app-kpi-card [valor]="t()!.soloAgenda" etiqueta="Solo en agenda (sin cobro)" [estado]="t()!.soloAgenda ? 'bad' : 'ok'" />
+      <app-kpi-card [valor]="t()!.soloCaja" etiqueta="Solo en caja (sin cita)" [estado]="t()!.soloCaja ? 'bad' : 'ok'" />
+      <app-kpi-card [valor]="t()!.nombreDistinto" etiqueta="Nombre distinto entre archivos" [estado]="t()!.nombreDistinto ? 'bad' : 'ok'" />
+      <app-kpi-card [valor]="t()!.aRevisar" etiqueta="Pacientes a revisar" [estado]="t()!.aRevisar ? 'bad' : 'ok'" />
+    </div>
+    <div class="filters">
+      <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:12px;">
+        <input type="checkbox" style="width:auto;" [checked]="soloRevisar()" (change)="soloRevisar.set($any($event.target).checked)" />
+        Mostrar solo los casos a revisar
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Paciente (agenda)</th><th>Nombre igual</th><th>Citas</th><th>Mov. caja</th><th>Cobros</th><th>Dif.</th><th>Ref. igual</th><th>Inusualidades</th></tr></thead>
+        <tbody>
+          @for (r of filas(); track r.id) {
+            <tr>
+              <td>{{ r.id }}</td><td>{{ r.nomAgenda || r.nomCaja }}</td>
+              <td [class.cell-bad]="r.nombreIgual === 'NO'">{{ r.nombreIgual }}</td>
+              <td>{{ r.citas }}</td><td>{{ r.movimientos }}</td><td>{{ r.documentos }}</td>
+              <td [class.cell-bad]="r.dif !== 0">{{ r.dif > 0 ? '+' : '' }}{{ r.dif }}</td>
+              <td [class.cell-bad]="r.refIgual === 'NO'">{{ r.refIgual }}</td>
+              <td>{{ r.inusualidades }}</td>
+            </tr>
+          } @empty {
+            <tr><td colspan="9">Sin novedades 🎉</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">{{ filas().length }} de {{ relacion().length }} pacientes (máx. 500 filas)</p>
+  </section>
+}

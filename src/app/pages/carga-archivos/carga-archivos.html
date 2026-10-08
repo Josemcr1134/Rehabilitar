@@ -1,0 +1,34 @@
+<section class="card">
+  <h2>Subir archivos Excel</h2>
+  <p class="hint">
+    Carga los tres reportes que ya tengas descargados (.xlsx). Detecto sola la hoja y la fila de
+    encabezados, y descarto filas de TOTAL y pies de reporte.
+  </p>
+
+  <div class="grid3">
+    <app-file-drop
+      etiqueta="Agenda de citas"
+      [mensaje]="estados().AGENDA.mensaje"
+      [error]="estados().AGENDA.error"
+      (archivoSeleccionado)="onArchivo('AGENDA', $event)"
+    />
+    <app-file-drop
+      etiqueta="Caja / Facturación"
+      [mensaje]="estados().CAJA.mensaje"
+      [error]="estados().CAJA.error"
+      (archivoSeleccionado)="onArchivo('CAJA', $event)"
+    />
+    <app-file-drop
+      etiqueta="Registro de consumo"
+      [mensaje]="estados().CONSUMO.mensaje"
+      [error]="estados().CONSUMO.error"
+      (archivoSeleccionado)="onArchivo('CONSUMO', $event)"
+    />
+  </div>
+
+  <p class="hint">Formato antiguo .xls no es legible aquí: ábrelo en Excel y guárdalo como .xlsx.</p>
+
+  <button class="btn-primary" [disabled]="!appState.listoParaConciliar()" (click)="irAConciliar()">
+    Conciliar
+  </button>
+</section>

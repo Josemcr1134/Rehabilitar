@@ -1,0 +1,48 @@
+@if (!appState.conciliado()) {
+  <section class="card">
+    <h2>12. Tarifas por referencia / ítem / descripción</h2>
+    <p class="hint">Concilia primero en la página "Conciliar".</p>
+  </section>
+} @else {
+  <section class="card">
+    <h2>12. Tarifas por referencia / ítem / descripción <span class="subt">— hoja «REFERENCIAITEMDESCRIPCION» del Excel</span></h2>
+    <p class="hint">Compara la tarifa (TAR), el copago del paciente (PAC) y lo que asume la entidad (ENT) que cada fuente declara para un mismo servicio. <code>N/A</code> significa que solo una fuente trae dato y por tanto no hay comparación posible.</p>
+    <div class="filters">
+      <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:12px;">
+        <input type="checkbox" style="width:auto;" [checked]="soloNovedad()" (change)="soloNovedad.set($any($event.target).checked)" />
+        Mostrar solo filas con novedad
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th rowspan="2">Paciente</th><th rowspan="2">Servicio (base)</th><th rowspan="2">Fuentes</th>
+            <th colspan="3" style="text-align:center">AGENDA</th><th colspan="3" style="text-align:center">CAJA</th><th colspan="3" style="text-align:center">CONSUMO</th>
+            <th rowspan="2">TAR ok</th><th rowspan="2">PAC ok</th><th rowspan="2">ENT ok</th><th rowspan="2">TAR=PAC+ENT</th><th rowspan="2">Estado</th>
+          </tr>
+          <tr><th>TAR</th><th>PAC</th><th>ENT</th><th>TAR</th><th>PAC</th><th>ENT</th><th>TAR</th><th>PAC</th><th>ENT</th></tr>
+        </thead>
+        <tbody>
+          @for (r of filas(); track r.id + r.base) {
+            <tr>
+              <td>{{ r.nombre }}</td><td>{{ r.base }}</td><td><code>{{ r.fuentes }}</code></td>
+              <td>{{ mon(r.ag.tar) }}</td><td>{{ mon(r.ag.pac) }}</td><td>{{ mon(r.ag.ent) }}</td>
+              <td>{{ mon(r.cj.tar) }}</td><td>{{ mon(r.cj.pac) }}</td><td>{{ mon(r.cj.ent) }}</td>
+              <td>{{ mon(r.co.tar) }}</td><td>{{ mon(r.co.pac) }}</td><td>{{ mon(r.co.ent) }}</td>
+              <td [class.cell-bad]="r.tarOk === 'NO'">{{ r.tarOk }}</td>
+              <td [class.cell-bad]="r.pacOk === 'NO'">{{ r.pacOk }}</td>
+              <td [class.cell-bad]="r.entOk === 'NO'">{{ r.entOk }}</td>
+              <td [class.cell-bad]="r.sumaOk === 'NO'">{{ r.sumaOk }}</td>
+              <td><span class="tag" [class]="tagClase(r.estado)">{{ r.estado }}</span></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">
+      {{ filas().length }} de {{ referencias().length }} combinaciones paciente/servicio ·
+      {{ kpis()!.refDiferencia }} con diferencia de tarifa · {{ kpis()!.refIncompleto }} incompletas (máx. 500 filas)
+    </p>
+  </section>
+}

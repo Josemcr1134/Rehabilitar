@@ -1,0 +1,171 @@
+<section class="card">
+  <h2>World Office · Facturas (FV) y recibos (RC) desde Caja</h2>
+  <p class="hint">
+    Toma el reporte de <strong>CAJA</strong> cargado arriba (por API o por Excel) y arma las facturas
+    <code>R</code>, <code>COPG</code>, <code>COPL</code> y los recibos de anticipo (<code>ANTR</code>, <code>ANTL</code>)
+    y de abono a deuda (<code>RCR-A</code>, <code>RCL-A</code> con valor), con las reglas de la plantilla institucional.
+    No hace falta conciliar antes.
+  </p>
+  <p class="hint">{{ cajaInfo() }}</p>
+
+  <div class="warn-box">
+    <strong>Token de World Office:</strong> se genera en World Office › Configuración › Configuración General › API.
+    Pégalo cada vez; no se guarda en el archivo ni en el navegador. Viaja por HTTPS hasta <code>/wo</code>, que Vercel
+    reenvía a <code>api.worldoffice.cloud</code>. <strong>Lo que se envía modifica directamente la contabilidad</strong>:
+    simula primero.
+  </div>
+
+  <div class="grid2">
+    <div class="field">
+      <label>Token API World Office</label>
+      <input type="password" [(ngModel)]="token" autocomplete="off" placeholder="eyJ…" />
+    </div>
+    <div class="field">
+      <label>Prefijo de autorización</label>
+      <input type="text" [(ngModel)]="authPrefix" />
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary btn-small" [disabled]="!puedeConectar()" (click)="conectar()">Conectar y leer catálogos</button>
+    <button class="btn-outline btn-small" [disabled]="!puedePreparar()" (click)="preparar()">Preparar documentos</button>
+    <button class="btn-outline btn-small" [disabled]="!puedeExcel()" (click)="descargarPlantilla()">⬇ Plantilla Excel WO</button>
+    <button class="btn-outline btn-small" [disabled]="!puedeApi()" (click)="simular()">Simular envío</button>
+    <button class="btn-secondary btn-small" [disabled]="!puedeApi()" (click)="enviarReal()">Enviar a World Office</button>
+  </div>
+
+  <div class="filters" style="margin-top:12px;">
+    <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:12px;">
+      <input type="checkbox" style="width:auto;" [checked]="conservarNumero()" (change)="conservarNumero.set($any($event.target).checked)" />
+      Conservar el número de Medifolios (R-15993 → 15993)
+    </label>
+    <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:12px;">
+      <input type="checkbox" style="width:auto;" [checked]="contabilizar()" (change)="contabilizar.set($any($event.target).checked)" />
+      Contabilizar las facturas al crearlas
+    </label>
+    <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:12px;">
+      <input type="checkbox" style="width:auto;" [checked]="verificarDuplicados()" (change)="verificarDuplicados.set($any($event.target).checked)" />
+      Verificar duplicados antes de enviar
+    </label>
+    <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:12px;">
+      <input type="checkbox" style="width:auto;" [checked]="verExcluidos()" (change)="verExcluidos.set($any($event.target).checked)" />
+      Mostrar excluidos en la tabla
+    </label>
+  </div>
+
+  <p class="hint">{{ mensaje() }}</p>
+
+  @if (prep()) {
+    <div class="kpi-grid">
+      <div class="kpi ok"><div class="val">{{ prep()!.facturas.length }}</div><div class="lbl">Facturas FV · {{ sumFacturas() }}</div></div>
+      <div class="kpi ok"><div class="val">{{ prep()!.recibos.length }}</div><div class="lbl">Recibos RC · {{ sumRecibos() }}</div></div>
+      <div class="kpi"><div class="val">{{ prep()!.excluidos.length }}</div><div class="lbl">Excluidos · {{ sumExcluidos() }}</div></div>
+      <div class="kpi" [class.bad]="prep()!.excepciones.length" [class.ok]="!prep()!.excepciones.length"><div class="val">{{ prep()!.excepciones.length }}</div><div class="lbl">Excepciones · {{ sumExcepciones() }}</div></div>
+    </div>
+
+    <table class="fin-table" style="margin-top:10px;">
+      <tr><th>Control de revisoría</th><th>Resultado</th><th>Detalle</th></tr>
+      @for (c of prep()!.controles; track c.control) {
+        <tr>
+          <td>{{ c.control }}</td>
+          <td [class.cell-ok]="c.ok" [class.cell-bad]="!c.ok">{{ c.ok ? 'OK' : 'REVISAR' }}</td>
+          <td style="text-align:left;font-weight:400;">{{ c.detalle }}</td>
+        </tr>
+      }
+    </table>
+
+    @if (cat()) {
+      <div class="subtitulo">Catálogos de World Office</div>
+      <table class="fin-table">
+        <tr><th>Catálogo</th><th>Valor esperado</th><th>En World Office</th></tr>
+        @for (f of catalogoFilas(); track f[0] + f[1]) {
+          <tr>
+            <td>{{ f[0] }}</td>
+            <td style="text-align:left;font-weight:400">{{ f[1] }}</td>
+            <td [class.cell-ok]="f[2]" [class.cell-bad]="!f[2]">{{ f[2] ? 'Existe' : 'NO EXISTE' }}</td>
+          </tr>
+        }
+      </table>
+      @if (cat()!.errores.length) {
+        <p class="hint" style="color:var(--rojo)">No se pudieron leer: {{ cat()!.errores.join(' · ') }}</p>
+      }
+      <p class="hint">Clientes, vendedor, productos (01–08) y cuentas contables se buscan uno por uno al simular o enviar.</p>
+    }
+
+    <div class="subtitulo">Documentos a enviar</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th></th><th>Tipo</th><th>Documento</th><th>Fecha</th><th>Empresa</th><th>Cliente</th><th>Nombre</th>
+            <th>Concepto</th><th>Forma pago / cuentas</th><th>Producto</th><th>Centro costos</th><th>Valor</th><th>Anulado</th><th>Avisos / motivo</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (d of docsVisibles(); track d.documento) {
+            <tr>
+              <td><input type="checkbox" style="width:auto;" [checked]="seleccionado(d.documento)" (change)="toggleSeleccion(d.documento)" /></td>
+              <td>{{ d.tipo }}</td><td>{{ d.documento }}</td><td style="white-space:nowrap">{{ d.fecha }}</td>
+              <td>{{ d.empresaKey }}</td><td>{{ d.cliente }}</td><td>{{ d.nombre }}</td>
+              <td>{{ d.concepto }}</td>
+              <td>{{ d.tipo === 'FV' ? d.formaPagoWO : d.asientos.map(a => a.naturaleza + ' ' + a.cuenta).join(' / ') }}</td>
+              <td>{{ d.tipo === 'FV' ? (d.producto + ' · ' + d.servicio) : d.clase }}</td>
+              <td>{{ d.centroCosto || '—' }}</td>
+              <td style="text-align:right">{{ fmtCOP(d.valor) }}</td>
+              <td [class.cell-warn]="d.anulado">{{ d.anulado ? 'SI' : 'NO' }}</td>
+              <td [class.cell-warn]="d.avisos.length">{{ d.avisos.join(' · ') || '—' }}</td>
+            </tr>
+          }
+          @for (d of prep()!.excepciones; track d.documento) {
+            <tr>
+              <td></td><td>—</td><td>{{ d.documento }}</td><td>{{ d.fecha }}</td>
+              <td>{{ d.empresaKey }}</td><td>{{ d.cliente }}</td><td>{{ d.nombre }}</td>
+              <td colspan="4">{{ d.formasOrigen }}</td>
+              <td style="text-align:right">{{ fmtCOP(d.valor) }}</td><td></td>
+              <td class="cell-bad">{{ d.motivo }}</td>
+            </tr>
+          }
+          @if (verExcluidos()) {
+            @for (d of prep()!.excluidos; track d.documento) {
+              <tr>
+                <td></td><td>—</td><td>{{ d.documento }}</td><td>{{ d.fecha }}</td>
+                <td>{{ d.empresaKey }}</td><td>{{ d.cliente }}</td><td>{{ d.nombre }}</td>
+                <td colspan="4">{{ d.formasOrigen }}</td>
+                <td style="text-align:right">{{ fmtCOP(d.valor) }}</td><td></td>
+                <td>{{ d.motivo }}</td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+
+    @if (log().length) {
+      <div class="subtitulo">Bitácora del envío</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Documento</th><th>Tipo</th><th>Valor</th><th>Estado</th><th>ID WO</th><th>Número WO</th><th>Detalle</th><th>Payload</th></tr>
+          </thead>
+          <tbody>
+            @for (l of log(); track l.documento + l.estado) {
+              <tr>
+                <td>{{ l.documento }}</td><td>{{ l.tipo }}</td><td style="text-align:right">{{ fmtCOP(l.valor) }}</td>
+                <td [class.cell-ok]="l.estado === 'CREADO' || l.estado === 'SIMULADO'"
+                    [class.cell-warn]="l.estado === 'YA EXISTE' || l.estado === 'CREADO CON NOVEDAD'"
+                    [class.cell-bad]="l.estado !== 'CREADO' && l.estado !== 'SIMULADO' && l.estado !== 'YA EXISTE' && l.estado !== 'CREADO CON NOVEDAD'">{{ l.estado }}</td>
+                <td>{{ l.idWO }}</td><td>{{ l.numeroWO }}</td><td>{{ l.detalle }}</td>
+                <td>
+                  @if (l.payload) {
+                    <details><summary style="cursor:pointer;font-size:11px;">ver JSON</summary><pre style="white-space:pre-wrap;font-size:10px;max-width:420px;">{{ l.payload | json }}</pre></details>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="actions"><button class="btn-outline btn-small" (click)="descargarBitacora()">⬇ Descargar bitácora</button></div>
+    }
+  }
+</section>

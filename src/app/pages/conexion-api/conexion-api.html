@@ -1,0 +1,68 @@
+<section class="card">
+  <h2>Conexión a la plataforma (API)</h2>
+  @if (returnUrl()) {
+    <div class="warn-box">Necesitas iniciar sesión para acceder a esa sección. Conéctate y te llevamos de vuelta.</div>
+  }
+  <div class="warn-box">
+    <strong>Credenciales:</strong> escríbelas cada vez que uses la herramienta. No se guardan en
+    este proyecto ni se envían a ningún tercero: solo se usan para pedir el token a la API en esta
+    sesión del navegador.
+  </div>
+  <div class="grid2">
+    <div class="field">
+      <label>Usuario</label>
+      <input type="text" [(ngModel)]="usuario" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label>Contraseña</label>
+      <input type="password" [(ngModel)]="password" autocomplete="off" />
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn-primary" [disabled]="conectando()" (click)="conectar()">Obtener token</button>
+    <span class="hint">{{ estado() }}</span>
+  </div>
+  @if (appState.token()) {
+    <p class="hint">Token actual: <code>{{ appState.token().slice(0, 24) }}…</code></p>
+  }
+  @if (crudo()) {
+    <details class="raw-box">
+      <summary>Ver respuesta cruda del login</summary>
+      <pre>{{ crudo() }}</pre>
+    </details>
+  }
+</section>
+
+<section class="card">
+  <h2>2. Reportes a consultar</h2>
+  <p class="hint">Rutas fijas: <code>/citas/listar</code>, <code>/consumos/buscar</code> y <code>/facturacion/buscar</code> (con <code>incluirFormasPago=1</code>). Solo necesitas el rango de fechas.</p>
+  <div class="grid2" style="margin-bottom:14px;">
+    <div class="field"><label>Desde</label><input type="date" [ngModel]="appState.desde()" (ngModelChange)="appState.desde.set($event)" /></div>
+    <div class="field"><label>Hasta</label><input type="date" [ngModel]="appState.hasta()" (ngModelChange)="appState.hasta.set($event)" /></div>
+  </div>
+
+  <div class="report-block">
+    <h3>Agenda diaria de citas</h3>
+    <div class="actions">
+      <button class="btn-outline btn-small" (click)="consultarAgenda()">Consultar Agenda</button>
+      <span class="hint" [class.error]="estados().AGENDA.error">{{ estados().AGENDA.mensaje }}</span>
+    </div>
+  </div>
+
+  <div class="report-block">
+    <h3>Registro de consumo</h3>
+    <div class="actions">
+      <button class="btn-outline btn-small" (click)="consultarConsumo()">Consultar Consumo</button>
+      <span class="hint" [class.error]="estados().CONSUMO.error">{{ estados().CONSUMO.mensaje }}</span>
+    </div>
+  </div>
+
+  <div class="report-block">
+    <h3>Caja / Facturación</h3>
+    <p class="hint" style="margin-top:0;">La categoría de cada movimiento se detecta por el texto de la forma de pago. Si la API devuelve solo códigos cortos, la clasificación puede salir genérica.</p>
+    <div class="actions">
+      <button class="btn-outline btn-small" (click)="consultarCaja()">Consultar Caja</button>
+      <span class="hint" [class.error]="estados().CAJA.error">{{ estados().CAJA.mensaje }}</span>
+    </div>
+  </div>
+</section>
