@@ -1,0 +1,31 @@
+{
+  "outputDirectory": "dist/rehabilitar-angular/browser",
+  "rewrites": [
+    {
+      "source": "/wo/:ruta*",
+      "destination": "https://api.worldoffice.cloud/api/v1/:ruta*"
+    },
+    {
+      "source": "/api/:ruta*",
+      "destination": "https://balanceo-reportes.medifolios.net/ci4/public/v2/:ruta*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+    },
+    {
+      "source": "/wo/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+    },
+    {
+      "source": "/index.html",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+    }
+  ]
+}

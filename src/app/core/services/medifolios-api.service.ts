@@ -3,15 +3,16 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { AppStateService } from './app-state.service';
 import { encontrarArrayObjetos } from '../utils/json.util';
+import { environment } from '../../../environments/environment';
 
 /**
  * Cliente de la API de Medifolios. Migrado desde index.html (auth, llamarApi,
- * llamarApiPaginado, encontrarToken, cargarFormasPago). En desarrollo, Angular
- * pega a `/api` y el dev-server lo reenvía a Medifolios vía proxy.conf.json
- * (mismo destino que el rewrite de vercel.json en producción) — así se evita
- * CORS exactamente igual que en el index.html original.
+ * llamarApiPaginado, encontrarToken, cargarFormasPago). Angular pega a
+ * `environment.medifoliosApiBase` (`/api`) y algo externo lo reenvía a
+ * Medifolios: `proxy.conf.json` en desarrollo, el rewrite de `vercel.json` en
+ * producción — así se evita CORS exactamente igual que en el index.html original.
  */
-const API_BASE = '/api';
+const API_BASE = environment.medifoliosApiBase;
 const RUTA_AUTH = '/auth';
 const RUTA_CITAS = '/citas/listar';
 const RUTA_CONSUMOS = '/consumos/buscar';
@@ -88,20 +89,29 @@ export class MedifoliosApiService {
     return { json, raw };
   }
 
+  /**
+   * ⚠️ Antes esto atrapaba cualquier error (red, 401, proxy mal configurado,
+   * JSON inválido) y lo tragaba en silencio, devolviendo lo acumulado hasta
+   * ese punto — en la página 1, eso es `[]`. El llamador lo interpretaba como
+   * "0 registros, consulta exitosa" en vez de "la API falló", así que el
+   * usuario veía "Sin registros en el rango consultado" aunque la API nunca
+   * respondiera. El índex.html original tenía el mismo swallow en el valor de
+   * retorno, pero SÍ mostraba el error en pantalla (`statusEl.textContent`)
+   * antes de cortar; acá no había ningún `statusEl` equivalente, así que el
+   * error desaparecía sin dejar rastro. Ahora se deja propagar: lo capturan los
+   * try/catch de conexion-api.ts (consultarAgenda/Consumo/Caja), que sí lo
+   * muestran en pantalla.
+   */
   private async llamarApiPaginado(ruta: string, paramsBase: Record<string, unknown>): Promise<unknown[]> {
     let pagina = 1;
     const limite = 200;
     let acumulado: unknown[] = [];
     while (pagina <= 200) {
-      try {
-        const { json } = await this.llamarApi(ruta, { ...paramsBase, pagina, limite });
-        const arr = encontrarArrayObjetos(json) || [];
-        acumulado = acumulado.concat(arr);
-        if (arr.length < limite) break;
-        pagina++;
-      } catch {
-        break;
-      }
+      const { json } = await this.llamarApi(ruta, { ...paramsBase, pagina, limite });
+      const arr = encontrarArrayObjetos(json) || [];
+      acumulado = acumulado.concat(arr);
+      if (arr.length < limite) break;
+      pagina++;
     }
     return acumulado;
   }

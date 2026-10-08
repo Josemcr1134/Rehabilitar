@@ -33,36 +33,38 @@
   }
 </section>
 
-<section class="card">
-  <h2>2. Reportes a consultar</h2>
-  <p class="hint">Rutas fijas: <code>/citas/listar</code>, <code>/consumos/buscar</code> y <code>/facturacion/buscar</code> (con <code>incluirFormasPago=1</code>). Solo necesitas el rango de fechas.</p>
-  <div class="grid2" style="margin-bottom:14px;">
-    <div class="field"><label>Desde</label><input type="date" [ngModel]="appState.desde()" (ngModelChange)="appState.desde.set($event)" /></div>
-    <div class="field"><label>Hasta</label><input type="date" [ngModel]="appState.hasta()" (ngModelChange)="appState.hasta.set($event)" /></div>
-  </div>
-
-  <div class="report-block">
-    <h3>Agenda diaria de citas</h3>
-    <div class="actions">
-      <button class="btn-outline btn-small" (click)="consultarAgenda()">Consultar Agenda</button>
-      <span class="hint" [class.error]="estados().AGENDA.error">{{ estados().AGENDA.mensaje }}</span>
+@if (appState.token()) {
+  <section class="card">
+    <h2>2. Reportes a consultar</h2>
+    <p class="hint">Rutas fijas: <code>/citas/listar</code>, <code>/consumos/buscar</code> y <code>/facturacion/buscar</code> (con <code>incluirFormasPago=1</code>). Solo necesitas el rango de fechas.</p>
+    <div class="grid2" style="margin-bottom:14px;">
+      <div class="field"><label>Desde</label><input type="date" [ngModel]="appState.desde()" (ngModelChange)="appState.desde.set($event)" /></div>
+      <div class="field"><label>Hasta</label><input type="date" [ngModel]="appState.hasta()" (ngModelChange)="appState.hasta.set($event)" /></div>
     </div>
-  </div>
 
-  <div class="report-block">
-    <h3>Registro de consumo</h3>
-    <div class="actions">
-      <button class="btn-outline btn-small" (click)="consultarConsumo()">Consultar Consumo</button>
-      <span class="hint" [class.error]="estados().CONSUMO.error">{{ estados().CONSUMO.mensaje }}</span>
+    <div class="report-block">
+      <h3>Agenda diaria de citas</h3>
+      <div class="actions">
+        <button class="btn-outline btn-small" (click)="consultarAgenda()">Consultar Agenda</button>
+        <span class="hint" [class.error]="estados().AGENDA.error">{{ estados().AGENDA.mensaje }}</span>
+      </div>
     </div>
-  </div>
 
-  <div class="report-block">
-    <h3>Caja / Facturación</h3>
-    <p class="hint" style="margin-top:0;">La categoría de cada movimiento se detecta por el texto de la forma de pago. Si la API devuelve solo códigos cortos, la clasificación puede salir genérica.</p>
-    <div class="actions">
-      <button class="btn-outline btn-small" (click)="consultarCaja()">Consultar Caja</button>
-      <span class="hint" [class.error]="estados().CAJA.error">{{ estados().CAJA.mensaje }}</span>
+    <div class="report-block">
+      <h3>Registro de consumo</h3>
+      <div class="actions">
+        <button class="btn-outline btn-small" (click)="consultarConsumo()">Consultar Consumo</button>
+        <span class="hint" [class.error]="estados().CONSUMO.error">{{ estados().CONSUMO.mensaje }}</span>
+      </div>
     </div>
-  </div>
-</section>
+
+    <div class="report-block">
+      <h3>Caja / Facturación</h3>
+      <p class="hint" style="margin-top:0;">La categoría de cada movimiento se detecta por el texto de la forma de pago. Si la API devuelve solo códigos cortos, la clasificación puede salir genérica.</p>
+      <div class="actions">
+        <button class="btn-outline btn-small" (click)="consultarCaja()">Consultar Caja</button>
+        <span class="hint" [class.error]="estados().CAJA.error">{{ estados().CAJA.mensaje }}</span>
+      </div>
+    </div>
+  </section>
+}

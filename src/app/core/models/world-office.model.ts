@@ -5,7 +5,12 @@
  * Toda la configuración editable por contabilidad vive en WO_CONFIG, igual que
  * en el original — se muta en caliente desde la página (authPrefix) en vez de
  * vivir en un signal, porque así se comportaba el objeto global original.
+ * `apiBase` es la única excepción: es un prefijo de infraestructura (lo
+ * reescribe proxy.conf.json/vercel.json hacia el host real de World Office),
+ * no una regla de negocio, así que sale de `environment` y no de un literal
+ * fijo aquí.
  */
+import { environment } from '../../../environments/environment';
 
 export interface WoConfig {
   apiBase: string;
@@ -31,7 +36,7 @@ export interface WoConfig {
 }
 
 export const WO_CONFIG: WoConfig = {
-  apiBase: '/wo',
+  apiBase: environment.worldOfficeApiBase,
   authPrefix: 'WO ',
   vendedorIdentificacion: '32783738',
   empresas: {

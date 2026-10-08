@@ -8,12 +8,17 @@
   </p>
   <p class="hint">{{ cajaInfo() }}</p>
 
-  <div class="warn-box">
-    <strong>Token de World Office:</strong> se genera en World Office › Configuración › Configuración General › API.
-    Pégalo cada vez; no se guarda en el archivo ni en el navegador. Viaja por HTTPS hasta <code>/wo</code>, que Vercel
-    reenvía a <code>api.worldoffice.cloud</code>. <strong>Lo que se envía modifica directamente la contabilidad</strong>:
-    simula primero.
-  </div>
+  @if (sesionRecordada()) {
+    <div class="warn-box">Se recordó el token de la última vez en este navegador — no hizo falta volver a pegarlo. Si este equipo lo usa más gente, usa «Cerrar sesión de World Office» al terminar.</div>
+  } @else {
+    <div class="warn-box">
+      <strong>Token de World Office:</strong> se genera en World Office › Configuración › Configuración General › API
+      (pídele uno con fecha de vencimiento larga a quien administre la cuenta, así casi no tendrás que repetir este paso).
+      Una vez conectes, este navegador lo recuerda — no hace falta pegarlo cada vez. Viaja por HTTPS hasta
+      <code>/wo</code>, que Vercel reenvía a <code>api.worldoffice.cloud</code>.
+      <strong>Lo que se envía modifica directamente la contabilidad</strong>: simula primero.
+    </div>
+  }
 
   <div class="grid2">
     <div class="field">
@@ -32,6 +37,9 @@
     <button class="btn-outline btn-small" [disabled]="!puedeExcel()" (click)="descargarPlantilla()">⬇ Plantilla Excel WO</button>
     <button class="btn-outline btn-small" [disabled]="!puedeApi()" (click)="simular()">Simular envío</button>
     <button class="btn-secondary btn-small" [disabled]="!puedeApi()" (click)="enviarReal()">Enviar a World Office</button>
+    @if (cat() || sesionRecordada()) {
+      <button class="btn-outline btn-small" (click)="cerrarSesionWO()">Cerrar sesión de World Office</button>
+    }
   </div>
 
   <div class="filters" style="margin-top:12px;">
