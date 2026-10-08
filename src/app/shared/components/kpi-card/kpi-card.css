@@ -1,0 +1,20 @@
+.kpi {
+  background: #fafbfc;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  padding: 14px;
+}
+.val {
+  font-size: 20px;
+  font-weight: 700;
+  color: #005078;
+}
+.kpi.ok .val { color: #28a028; }
+.kpi.warn .val { color: #9c6500; }
+.kpi.bad .val { color: #c0392b; }
+.lbl {
+  font-size: 11px;
+  color: #667;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}

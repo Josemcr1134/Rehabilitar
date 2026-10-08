@@ -1,0 +1,32 @@
+.app-header {
+  background: var(--azul);
+  color: #fff;
+  padding: 20px 28px;
+}
+.app-header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+.app-header p { margin: 4px 0 0; font-size: 13px; opacity: 0.85; }
+
+.app-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 10px 24px;
+  background: #fff;
+  border-bottom: 1px solid var(--gris-borde);
+}
+.app-nav a {
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--gris-txt);
+  text-decoration: none;
+}
+.app-nav a:hover { background: var(--gris-bg); }
+.app-nav a.activo { background: var(--azul); color: #fff; }
+.app-nav a.bloqueado { opacity: 0.5; }
+
+.app-main {
+  max-width: 1150px;
+  margin: 0 auto;
+  padding: 24px;
+}

@@ -1,0 +1,23 @@
+@if (!appState.conciliado()) {
+  <section class="card">
+    <h2>14. Exportar</h2>
+    <p class="hint">Concilia primero en la página "Conciliar" para poder exportar.</p>
+  </section>
+} @else {
+  <section class="card">
+    <h2>14. Exportar</h2>
+    <p class="hint">
+      El Excel sale en 9 hojas: <strong>Resumen</strong>, <strong>Por servicio</strong>,
+      <strong>resumen_caja</strong> (totales de la matriz), <strong>analisis_caja</strong>
+      (tabla plana con filtro y panel congelado en la fila 1), los tres archivos de origen
+      (<strong>Agenda</strong>, <strong>Caja</strong>, <strong>Consumo</strong>) con las columnas
+      VALOR TARIFA / ASUME PACIENTE / ASUME ENTIDAD derivadas del texto del servicio,
+      <strong>3 ARCHIVOS</strong> (los tres apilados con columnas alineadas) y
+      <strong>TARIFARIO</strong> (catálogo de servicios distintos).
+    </p>
+    <div class="actions">
+      <button class="btn-secondary" [disabled]="generando()" (click)="descargarExcel()">⬇ Descargar Excel (formato MODELO1)</button>
+      <span class="hint">{{ mensaje() }}</span>
+    </div>
+  </section>
+}

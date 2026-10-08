@@ -1,0 +1,43 @@
+@if (!appState.conciliado()) {
+  <section class="card">
+    <h2>13. Detalle por inconsistencia</h2>
+    <p class="hint">Concilia primero en la página "Conciliar".</p>
+  </section>
+} @else {
+  <section class="card">
+    <h2>13. Detalle por inconsistencia</h2>
+    <p class="hint">Cada registro muestra los valores reales de cada fuente, cuáles coinciden y la hipótesis técnica del posible origen del problema.</p>
+    <div class="inc-scroll">
+      @if (!incidencias().length) {
+        <p class="hint">No se encontraron inconsistencias 🎉</p>
+      } @else {
+        @for (g of filas(); track g.id) {
+          <details class="inc-item">
+            <summary><span class="tag" [class]="tagFor(g.estado)">{{ g.estado }}</span> {{ g.id }} · {{ g.fecha }} · {{ g.nombre || '(sin nombre)' }}</summary>
+            <div class="inc-body">
+              <table class="mini-table">
+                <thead><tr><th>Campo</th><th>AGENDA</th><th>CAJA</th><th>CONSUMO</th><th>Resultado</th></tr></thead>
+                <tbody>
+                  @for (c of g.comparaciones; track c.campo) {
+                    <tr>
+                      <td>{{ c.campo }}</td>
+                      <td [class.cell-bad]="!c.coincide">{{ c.valores.AGENDA || '—' }}</td>
+                      <td [class.cell-bad]="!c.coincide">{{ c.valores.CAJA || '—' }}</td>
+                      <td [class.cell-bad]="!c.coincide">{{ c.valores.CONSUMO || '—' }}</td>
+                      <td>{{ c.coincide ? '✔ Coincide' : '✘ ' + c.hipotesis }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+              <p><strong>Observación:</strong> {{ g.observacion }}</p>
+              <p><strong>Acción recomendada:</strong> {{ g.accion }}</p>
+            </div>
+          </details>
+        }
+        @if (incidencias().length > 300) {
+          <p class="hint">Mostrando 300 de {{ incidencias().length }} inconsistencias. Descarga el Excel para ver el detalle completo.</p>
+        }
+      }
+    </div>
+  </section>
+}

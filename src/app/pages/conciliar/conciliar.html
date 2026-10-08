@@ -1,0 +1,89 @@
+<section class="card">
+  <h2>4. Conciliar</h2>
+  <p class="hint" [class.error]="!appState.listoParaConciliar()">
+    @if (appState.listoParaConciliar()) {
+      Las tres fuentes están cargadas. Listo para conciliar.
+    } @else {
+      Carga Agenda, Caja y Consumo en "Subir archivos" antes de conciliar.
+    }
+  </p>
+  <div class="field" style="max-width:320px;">
+    <label>Facturado a entidad (opcional)</label>
+    <input
+      type="number"
+      placeholder="Vacío = se calcula del archivo de consumo"
+      [ngModel]="appState.facturadoEntidadManual() || ''"
+      (ngModelChange)="onFacturadoEntidadChange($event)"
+    />
+    <p class="hint">Solo si lo llevas por fuera. En blanco se calcula del consumo: VLR. NETO de lo facturado (ESTATUS = F) en convenio.</p>
+  </div>
+  <div class="actions">
+    <button class="btn-primary" [disabled]="!appState.listoParaConciliar()" (click)="conciliar()">Conciliar</button>
+  </div>
+</section>
+
+@if (appState.conciliado()) {
+  <section class="card">
+    <h2>6. Distribución por estado de conciliación</h2>
+    @for (b of barrasEstado(); track b.estado) {
+      <div class="mini-bar-row">
+        <div class="lab">{{ b.estado }}</div>
+        <div class="mini-bar-track"><div class="mini-bar-fill" [style.width.%]="b.pct" [style.background]="b.color"></div></div>
+        <div class="mini-bar-num">{{ b.n }}</div>
+      </div>
+    }
+  </section>
+
+  <section class="card">
+    <h2>7. Movimientos de CAJA por categoría</h2>
+    @for (b of barrasCategoria(); track b.cat) {
+      <div class="mini-bar-row">
+        <div class="lab">{{ b.cat }}</div>
+        <div class="mini-bar-track"><div class="mini-bar-fill" [style.width.%]="b.pct" [style.background]="b.color"></div></div>
+        <div class="mini-bar-num">{{ b.n }} · ${{ b.valor | number: '1.0-0' : 'es-CO' }}</div>
+      </div>
+    }
+  </section>
+
+  <section class="card">
+    <h2>9. Conciliación por paciente</h2>
+    <div class="filters">
+      <input type="text" placeholder="Buscar por nombre o ID..." [value]="busqueda()" (input)="busqueda.set($any($event.target).value)" />
+      <select [value]="filtroEstado()" (change)="filtroEstado.set($any($event.target).value)">
+        <option value="">Todos los estados</option>
+        @for (e of estadosDisponibles(); track e) {
+          <option [value]="e">{{ e }}</option>
+        }
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Fecha</th><th>Paciente</th><th>AG</th><th>CJ</th><th>CO</th><th>Estado</th>
+            <th>EPS ok</th><th>Prof ok</th><th>Serv ok</th><th>Auth ok</th><th>Observación</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (g of filasFiltradas(); track g.id) {
+            <tr>
+              <td>{{ g.id }}</td>
+              <td>{{ g.fecha }}</td>
+              <td>{{ g.nombre }}</td>
+              <td>{{ g.countAgenda }}</td>
+              <td>{{ g.countCaja }}</td>
+              <td>{{ g.countConsumo }}</td>
+              <td><span class="tag" [class]="tagClase(g.estado)">{{ g.estado }}</span></td>
+              <td>{{ ok(g, 'EPS / Entidad') || '—' }}</td>
+              <td>{{ ok(g, 'Profesional') || '—' }}</td>
+              <td>{{ ok(g, 'Referencia / Servicio') || '—' }}</td>
+              <td>{{ ok(g, 'N° Autorización') || '—' }}</td>
+              <td>{{ g.observacion }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">{{ filasFiltradas().length }} de {{ appState.groups().length }} grupos (mostrando máx. 500 filas)</p>
+  </section>
+}

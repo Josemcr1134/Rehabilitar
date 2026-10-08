@@ -1,0 +1,14 @@
+{
+  "/api/*": {
+    "target": "https://balanceo-reportes.medifolios.net",
+    "changeOrigin": true,
+    "secure": true,
+    "pathRewrite": { "^/api": "/ci4/public/v2" }
+  },
+  "/wo/*": {
+    "target": "https://api.worldoffice.cloud",
+    "changeOrigin": true,
+    "secure": true,
+    "pathRewrite": { "^/wo": "/api/v1" }
+  }
+}

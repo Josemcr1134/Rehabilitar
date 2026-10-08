@@ -1,0 +1,7 @@
+<div class="field">
+  <label>{{ etiqueta() }}</label>
+  <input type="file" [accept]="accept()" (change)="onChange($event)" />
+  @if (mensaje()) {
+    <p class="hint" [class.error]="error()">{{ mensaje() }}</p>
+  }
+</div>

@@ -1,0 +1,25 @@
+@if (!appState.conciliado()) {
+  <section class="card">
+    <h2>10. Conciliación por servicio</h2>
+    <p class="hint">Concilia primero en la página "Conciliar".</p>
+  </section>
+} @else {
+  <section class="card">
+    <h2>10. Conciliación por servicio <span class="subt">— hoja «Por servicio» del Excel</span></h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Paciente</th><th>Servicio</th><th>AG</th><th>CJ</th><th>CO</th><th>Estado</th><th>Validación</th></tr></thead>
+        <tbody>
+          @for (s of filas(); track s.id + s.servicio) {
+            <tr>
+              <td>{{ s.nombre }}</td><td>{{ s.servicio }}</td><td>{{ s.ag }}</td><td>{{ s.cj }}</td><td>{{ s.co }}</td>
+              <td><span class="tag" [class]="tagFor(s.estado)">{{ s.estado }}</span></td>
+              <td [class.cell-ok]="s.aprobado">{{ s.notaAprobado || '—' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">{{ servicios().length }} combinaciones paciente/servicio (mostrando máx. 500 filas)</p>
+  </section>
+}

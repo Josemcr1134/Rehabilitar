@@ -1,0 +1,88 @@
+@if (!t()) {
+  <section class="card">
+    <h2>8. Análisis de caja por código de documento</h2>
+    <p class="hint">Concilia primero en la página "Conciliar".</p>
+  </section>
+} @else {
+  <section class="card">
+    <h2>8. Análisis de caja por código de documento <span class="subt">— hoja «analisis_caja» del Excel</span></h2>
+    <p class="hint">
+      Aplica la <strong>matriz prefijo × forma de pago</strong>: <code>COPG</code> y <code>COPL</code> (7 formas) → ASUME PACIENTE ·
+      <code>R</code> (9 formas) → ASUME PACIENTE si el tercero tiene cédula, RADICADO A ENTIDAD si es NIT o empresa ·
+      <code>RCR-A</code> y <code>RCL-A</code> (7 formas) → ASUME PACIENTE solo con valor 0; con valor distinto de 0 es PAGO DE DEUDA
+      (y en RCL-A, además, no entra en la agenda del día) · <code>ANTL</code> y <code>ANTR</code> (5 formas) → ANTICIPO RECIBIDO,
+      no entra en la agenda · <code>RCE</code> (2 formas) → PAGO DE DEUDA, no entra en la agenda ·
+      <code>LA</code> (2 formas) → RADICADO A ENTIDAD.
+    </p>
+    <p class="hint">Cada movimiento se valida contra las formas de pago permitidas para su prefijo; las que no están en la lista se marcan como inconsistencia.</p>
+
+    <div class="kpi-grid">
+      <app-kpi-card [valor]="fmt(t()!.recaudoDia)" etiqueta="Recaudo efectivo del día" estado="ok" />
+      <app-kpi-card [valor]="fmt(t()!.recaudoPaciente)" etiqueta="· asume paciente" />
+      <app-kpi-card [valor]="fmt(t()!.recaudoCartera)" etiqueta="· pago de deuda (cartera)" />
+      <app-kpi-card [valor]="fmt(t()!.recaudoAnticipos)" etiqueta="· anticipos recibidos (ANTL/ANTR)" />
+      <app-kpi-card [valor]="fmt(t()!.radicado)" etiqueta="Radicado a entidad" />
+      <app-kpi-card [valor]="fmt(t()!.anticipos)" etiqueta="Anticipos aplicados" />
+      <app-kpi-card [valor]="fmt(t()!.creditos)" etiqueta="Crédito por cobrar" />
+      <app-kpi-card [valor]="t()!.entranAgenda + ' / ' + t()!.movimientos" etiqueta="Movs. que entran en la agenda del día" />
+      <app-kpi-card [valor]="t()!.formaInvalida" etiqueta="Formas de pago fuera de la matriz" [estado]="t()!.formaInvalida ? 'bad' : 'ok'" />
+      <app-kpi-card [valor]="t()!.conInconsistencia" etiqueta="Movimientos con inconsistencia" [estado]="t()!.conInconsistencia ? 'bad' : 'ok'" />
+    </div>
+
+    <div class="subtitulo">Movimientos por status</div>
+    <table class="fin-table">
+      <tbody>
+        <tr><th>Grupo de la matriz</th><th>Movs.</th><th>Valor</th><th>Recaudo hoy</th><th>Entran en agenda</th></tr>
+        @for (f of filasGrupo(); track f.g) {
+          <tr><td><strong>{{ f.g }}</strong></td><td>{{ f.v.n }}</td><td>{{ fmt(f.v.valor) }}</td><td>{{ f.v.recaudo ? fmt(f.v.recaudo) : '—' }}</td><td>{{ f.v.agenda }}</td></tr>
+        }
+        <tr><th>Status</th><th>Movs.</th><th>Valor</th><th>Recaudo hoy</th><th></th></tr>
+        @for (f of filasStatus(); track f[0]) {
+          <tr><td>{{ f[0] }}</td><td>{{ f[1].n }}</td><td>{{ fmt(f[1].valor) }}</td><td>{{ f[1].recaudo ? fmt(f[1].recaudo) : '—' }}</td><td></td></tr>
+        }
+        <tr><th>Prefijo</th><th>Movs.</th><th>Valor</th><th>Recaudo hoy</th><th>Formas fuera de matriz</th><th>Formas de pago encontradas</th></tr>
+        @for (f of filasPref(); track f.pr) {
+          <tr>
+            <td><strong>{{ f.pr }}</strong></td><td>{{ f.v.n }}</td><td>{{ fmt(f.v.valor) }}</td><td>{{ f.v.recaudo ? fmt(f.v.recaudo) : '—' }}</td>
+            <td [class.cell-bad]="f.v.invalidas">{{ f.v.invalidas || '0' }}</td><td style="font-size:11px">{{ f.detalle }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    <div class="filters" style="margin-top:14px;">
+      <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:12px;">
+        <input type="checkbox" style="width:auto;" [checked]="soloInconsistencia()" (change)="soloInconsistencia.set($any($event.target).checked)" />
+        Mostrar solo movimientos con inconsistencia
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Grupo</th><th>Prefijo</th><th>¿Agenda?</th><th>Status</th><th>Doc.</th><th>Paciente / Tercero</th>
+            <th>Forma pago (normalizada)</th><th>OK</th><th>Valor</th><th>TAR</th><th>PAC</th><th>ENT</th>
+            <th>Recaudo hoy</th><th>Destino del resto</th><th>Inconsistencias</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (x of filas(); track $index) {
+            <tr>
+              <td>{{ x.grupo }}</td><td>{{ x.prefijo }}</td>
+              <td [class.cell-warn]="x.entraAgenda === 'NO'">{{ x.entraAgenda }}</td>
+              <td>{{ x.status }}</td><td>{{ x.documento }}</td>
+              <td>{{ x.nombre }}</td><td>{{ x.formaNorm || '—' }}</td>
+              <td [class.cell-bad]="x.formaValida === 'NO'">{{ x.formaValida }}</td><td>{{ mon(x.valor) }}</td>
+              <td>{{ mon(x.tar) }}</td><td>{{ mon(x.pac) }}</td><td>{{ mon(x.ent) }}</td>
+              <td>{{ x.recaudo ? mon(x.recaudo) : '—' }}</td><td>{{ x.destino || '—' }}</td>
+              <td [class.cell-bad]="x.inconsistencias">{{ x.inconsistencias || '—' }}</td>
+            </tr>
+          } @empty {
+            <tr><td colspan="15">Sin movimientos que mostrar</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">{{ filas().length }} de {{ totalFilas() }} movimientos (máx. 500 filas)</p>
+  </section>
+}

@@ -1,0 +1,4 @@
+<div class="kpi" [class.ok]="estado() === 'ok'" [class.warn]="estado() === 'warn'" [class.bad]="estado() === 'bad'">
+  <div class="val">{{ valor() }}</div>
+  <div class="lbl">{{ etiqueta() }}</div>
+</div>
