@@ -33,6 +33,13 @@ export interface WoConfig {
   cuentaCreditoAnticipo: string;
   cuentaCreditoDeuda: string;
   formaPagoContable: Record<string, string | null>;
+  /**
+   * Los abonos a deuda (RCR-A / RCL-A) deben cruzarse con la factura que pagan
+   * («Abona A» en la plantilla oficial de recibos). Por API eso son dos pasos
+   * (crear RC + cruzarCuentas) que aún no se han probado con la cuenta real, así
+   * que mientras esté en false esos recibos van SOLO en la plantilla Excel.
+   */
+  recibosDeudaPorAPI: boolean;
 }
 
 export const WO_CONFIG: WoConfig = {
@@ -67,6 +74,7 @@ export const WO_CONFIG: WoConfig = {
     EFECTIVO: 'Efectivo', TARJETA: null, 'TRANSFERENCIA A DAVIVIENDA': null,
     TRANSFERENCIA_BANCOLOMBIA_REHABILITAR: null, TRANSFERENCIA_BANCOLOMBIA_LILIAN: null,
   },
+  recibosDeudaPorAPI: false,
 };
 
 export interface ReglaTablaA { grupo: 'PAGO' | 'CREDITO' | 'ANTICIPO'; concepto: string; forma: string }
@@ -105,11 +113,22 @@ export const CENTROS: Array<[RegExp, string]> = [
 ];
 
 export interface Pago { forma: string; valor: number; origen: string }
-export interface Asiento { naturaleza: 'D' | 'C'; cuenta: string; valor: number; forma?: string }
+export interface Asiento {
+  naturaleza: 'D' | 'C';
+  cuenta: string;
+  valor: number;
+  forma?: string;
+  /** Columna «Abona A» de la plantilla de recibos: «FV <prefijo> <número>» de la factura que se abona. */
+  abonaA?: string;
+}
 
 interface DocumentoBase {
+  /** Llave única para el control de duplicados e historial: «EMPRESA|DOCUMENTO» (ej. «REHABILITAR|R-15993»). */
+  clave: string;
   documento: string;
   prefijo: string;
+  /** Prefijo tal como existe en World Office (WO_CONFIG.prefijoWO o el mismo de Medifolios). */
+  prefijoWO: string;
   numero: number | null;
   fecha: string;
   fechaRegistro: string;
@@ -124,6 +143,8 @@ interface DocumentoBase {
   movimientos: number;
   formasOrigen: string;
   avisos: string[];
+  /** false = no se envía por la API; solo va en la plantilla Excel (ej. abonos a deuda). */
+  envioAPI: boolean;
 }
 
 export interface FacturaWO extends DocumentoBase {
@@ -143,6 +164,8 @@ export interface ReciboWO extends DocumentoBase {
   clase: 'ANTICIPO' | 'PAGO DE DEUDA';
   concepto: string;
   centroCosto: string;
+  /** Solo abonos a deuda: factura que se abona («FV R 15832»). Vacío en anticipos. */
+  abonaA: string;
   asientos: Asiento[];
 }
 

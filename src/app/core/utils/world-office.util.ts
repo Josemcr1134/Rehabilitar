@@ -17,6 +17,9 @@ export const fmtCOP = (n: number): string => '$' + Math.round(n || 0).toLocaleSt
 /** Mayúsculas, sin tildes, espacios colapsados — para comparar texto libre contra las tablas de reglas. */
 export const key = (s: unknown): string => up(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
+/** Llave de control de duplicados e historial: «EMPRESA|DOCUMENTO». */
+export const claveDocumento = (empresaKey: string, documento: string): string => `${empresaKey}|${up(documento).replace(/\s+/g, '')}`;
+
 export function servicioDe(texto: string): string {
   const s = key(texto);
   if (/OCUPACI/.test(s)) return 'TERAPIA OCUPACIONAL';
@@ -82,12 +85,14 @@ export function prepararDocumentos(caja: CajaRecord[]): PreparacionWO {
     const valor = filas.reduce((s, f) => s + (Number(f.valor) || 0), 0);
     const formas = filas.map((f) => normalizarFormaPago(f.formaPago));
     const empresaKey: 'LILIAN' | 'REHABILITAR' = WO_CONFIG.prefijosLilian.includes(pre) ? 'LILIAN' : 'REHABILITAR';
+    const prefijoWO = WO_CONFIG.prefijoWO[pre] || pre;
     const base = {
-      documento: doc, prefijo: pre, numero, fecha: r0.fecha, fechaRegistro: String(r0.fechaRegistro || ''),
+      clave: claveDocumento(empresaKey, doc), documento: doc, prefijo: pre, prefijoWO, numero, fecha: r0.fecha, fechaRegistro: String(r0.fechaRegistro || ''),
       orden: r0._orden, cliente: r0.id, nombre: r0.nombre, entidad: r0.entidad, valor,
       anulado: filas.some((f) => up(f.estado) === 'A'), empresaKey, empresa: WO_CONFIG.empresas[empresaKey],
       movimientos: filas.length, formasOrigen: [...new Set(filas.map((f) => String(f.formaPago || '').trim()))].join(' + '),
       avisos: [] as string[],
+      envioAPI: true,
     };
     const excluir = (motivo: string) => excluidos.push({ ...base, motivo });
     const excepcion = (motivo: string) => excepciones.push({ ...base, motivo });
@@ -95,6 +100,10 @@ export function prepararDocumentos(caja: CajaRecord[]): PreparacionWO {
 
     if (numero === null) { excepcion('No se pudo leer el número del documento'); continue; }
     if (!base.cliente) { excepcion('Movimiento sin ID. TERCERO'); continue; }
+    // Campos obligatorios de las plantillas oficiales: Cliente*/Recibo de* numérico (máx. 20) y Fecha* válida.
+    if (!/^\d{1,20}$/.test(base.cliente)) { excepcion(`ID. TERCERO «${base.cliente}» no es numérico (la plantilla de World Office exige número)`); continue; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(base.fecha)) { excepcion('Fecha inválida o vacía (Fecha * de la plantilla)'); continue; }
+    if (prefijoWO.length > 4) base.avisos.push(`Prefijo «${prefijoWO}» tiene más de 4 caracteres (límite de la plantilla de World Office): definir su equivalente en WO_CONFIG.prefijoWO`);
 
     // ---------------- FACTURAS: R, COPG, COPL ----------------
     if (WO_CONFIG.prefijosFactura.includes(pre)) {
@@ -150,13 +159,25 @@ export function prepararDocumentos(caja: CajaRecord[]): PreparacionWO {
       if (sinCuenta.length) { excepcion('Forma de pago sin cuenta débito en CUENTAS Y CONCEPTOS: ' + sinCuenta.join(', ')); continue; }
       const centroCosto = centroDe(base.entidad);
       if (!centroCosto) base.avisos.push('Entidad sin centro de costos: los asientos van sin centro');
-      const concepto = esAnticipo ? WO_CONFIG.conceptoReciboAnticipo : WO_CONFIG.conceptoReciboDeuda;
+      let abonaA = '';
+      if (esDeuda) {
+        // «ABONO DOCUMENTO R-15832» → «FV R 15832» (formato de la columna «Abona A»: tipo, prefijo y número).
+        const texto = r0.itemsRaw !== undefined && r0.itemsRaw !== null && r0.itemsRaw !== '' ? r0.itemsRaw : r0.items;
+        const ref = String(texto || '').match(/ABONO\s+DOCUMENTO\s+([A-Z]+(?:-[A-Z])?)-?(\d+)/i);
+        if (!ref) { excepcion('Abono a deuda sin «ABONO DOCUMENTO <prefijo>-<número>» en ITEMS: no se sabe qué factura abona'); continue; }
+        const preRef = up(ref[1]);
+        abonaA = `FV ${WO_CONFIG.prefijoWO[preRef] || preRef} ${ref[2]}`;
+      }
+      // El documento de Medifolios va en el concepto: deja rastro en WO y permite detectar duplicados.
+      const concepto = `${esAnticipo ? WO_CONFIG.conceptoReciboAnticipo : WO_CONFIG.conceptoReciboDeuda} ${doc}`;
       const asientos: Asiento[] = filas.filter((f) => Math.round(Number(f.valor) || 0) !== 0).map((f) => {
         const fc = normalizarFormaPago(f.formaPago);
         return { naturaleza: 'D', cuenta: WO_CONFIG.cuentaDebitoPorForma[fc], valor: Number(f.valor) || 0, forma: fc };
       });
-      asientos.push({ naturaleza: 'C', cuenta: esAnticipo ? WO_CONFIG.cuentaCreditoAnticipo : WO_CONFIG.cuentaCreditoDeuda, valor });
-      recibos.push({ ...base, tipo: 'RC', clase: esAnticipo ? 'ANTICIPO' : 'PAGO DE DEUDA', concepto, centroCosto, asientos });
+      asientos.push({ naturaleza: 'C', cuenta: esAnticipo ? WO_CONFIG.cuentaCreditoAnticipo : WO_CONFIG.cuentaCreditoDeuda, valor, ...(abonaA ? { abonaA } : {}) });
+      const envioAPI = esAnticipo || WO_CONFIG.recibosDeudaPorAPI;
+      if (!envioAPI) base.avisos.push(`Abono a ${abonaA}: va en la plantilla Excel (cruce «Abona A»), no por la API`);
+      recibos.push({ ...base, envioAPI, tipo: 'RC', clase: esAnticipo ? 'ANTICIPO' : 'PAGO DE DEUDA', concepto, centroCosto, abonaA, asientos });
       continue;
     }
 
