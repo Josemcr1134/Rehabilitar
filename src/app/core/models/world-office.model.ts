@@ -2,19 +2,16 @@
  * Integración con World Office (facturas FV y recibos RC desde CAJA).
  * Migrada 1:1 desde el bloque <script> final de index.html (CLAUDE.md sección 15).
  *
- * Toda la configuración editable por contabilidad vive en WO_CONFIG, igual que
- * en el original — se muta en caliente desde la página (authPrefix) en vez de
- * vivir en un signal, porque así se comportaba el objeto global original.
- * `apiBase` es la única excepción: es un prefijo de infraestructura (lo
- * reescribe proxy.conf.json/vercel.json hacia el host real de World Office),
- * no una regla de negocio, así que sale de `environment` y no de un literal
- * fijo aquí.
+ * Toda la configuración editable por contabilidad vive en WO_CONFIG.
+ * `apiBase` es la única excepción: es la ruta del backend propio
+ * (/api/worldoffice → api/worldoffice.js), que guarda el token de World Office
+ * en una variable de entorno y hace las llamadas; sale de `environment`.
  */
 import { environment } from '../../../environments/environment';
 
 export interface WoConfig {
+  /** Backend propio (api/worldoffice.js): es el único que conoce el token de World Office. */
   apiBase: string;
-  authPrefix: string;
   vendedorIdentificacion: string;
   empresas: { REHABILITAR: string; LILIAN: string };
   prefijosLilian: string[];
@@ -44,7 +41,6 @@ export interface WoConfig {
 
 export const WO_CONFIG: WoConfig = {
   apiBase: environment.worldOfficeApiBase,
-  authPrefix: 'WO ',
   vendedorIdentificacion: '32783738',
   empresas: {
     REHABILITAR: 'CENTRO DE TERAPIAS INTEGRADAS REHABILITAR S.A.S',
@@ -207,6 +203,22 @@ export interface FilaBitacora {
   numeroWO: string | number;
   detalle: string;
   payload: unknown;
+}
+
+/** GET /api/worldoffice?accion=estado — qué está configurado en el servidor (nunca los valores). */
+export interface EstadoServidorWO { tokenConfigurado: boolean; claveConfigurada: boolean; historialCompartido: boolean; base: string }
+
+/** Un registro del historial de envíos (servidor o, de respaldo, este navegador). */
+export interface RegistroHistorialWO {
+  fecha: string;
+  clave: string;
+  ruta: string;
+  ok: boolean;
+  creado: boolean;
+  idWO: string | number | null;
+  numeroWO: string | number | null;
+  mensaje: string;
+  meta?: { documento?: string; valor?: number; [k: string]: unknown };
 }
 
 export interface OpcionesEnvio {

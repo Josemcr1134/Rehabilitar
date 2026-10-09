@@ -6,5 +6,5 @@
 export const environment = {
   production: true,
   medifoliosApiBase: '/api',
-  worldOfficeApiBase: '/wo',
+  worldOfficeApiBase: '/api/worldoffice',
 };

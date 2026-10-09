@@ -1,6 +1,10 @@
 /**
  * Entorno de desarrollo (el que usa `ng serve` / `ng test` por defecto).
  *
+ * `worldOfficeApiBase` apunta al backend propio api/worldoffice.js (una función
+ * de Vercel en producción; `npm run wo:dev` en local, vía proxy.conf.json): el
+ * navegador ya no habla directo con World Office ni conoce su token.
+ *
  * `medifoliosApiBase`/`worldOfficeApiBase` son los mismos prefijos relativos
  * aquí y en producción a propósito: lo que cambia entre entornos no es la ruta
  * que llama el código, sino quién la reescribe hacia el host real —
@@ -14,5 +18,5 @@
 export const environment = {
   production: false,
   medifoliosApiBase: '/api',
-  worldOfficeApiBase: '/wo',
+  worldOfficeApiBase: '/api/worldoffice',
 };

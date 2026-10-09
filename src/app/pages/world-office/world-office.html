@@ -8,33 +8,34 @@
   </p>
   <p class="hint">{{ cajaInfo() }}</p>
 
-  @if (sesionRecordada()) {
-    <div class="warn-box">Se recordó el token de la última vez en este navegador — no hizo falta volver a pegarlo. Si este equipo lo usa más gente, usa «Cerrar sesión de World Office» al terminar.</div>
+  <div class="warn-box">
+    <strong>Seguridad:</strong> el token de World Office vive solo en el servidor (variable de entorno
+    <code>WO_API_TOKEN</code> de Vercel) y nunca llega a este navegador. Aquí solo se escribe la
+    <strong>clave de acceso de la aplicación</strong>, que se olvida al cerrar la pestaña.
+    <strong>Lo que se envía modifica directamente la contabilidad</strong>: descarga las plantillas o simula primero.
+  </div>
+
+  @if (estadoServidor(); as e) {
+    <p class="hint">
+      Servidor: token World Office {{ e.tokenConfigurado ? '✔ configurado' : '✘ falta WO_API_TOKEN' }} ·
+      clave de la app {{ e.claveConfigurada ? '✔ configurada' : '✘ falta APP_ACCESS_KEY' }} ·
+      historial {{ e.historialCompartido ? 'compartido (KV)' : 'solo en este navegador' }}
+    </p>
   } @else {
-    <div class="warn-box">
-      <strong>Token de World Office:</strong> se genera en World Office › Configuración › Configuración General › API
-      (pídele uno con fecha de vencimiento larga a quien administre la cuenta, así casi no tendrás que repetir este paso).
-      Una vez conectes, este navegador lo recuerda — no hace falta pegarlo cada vez. Viaja por HTTPS hasta
-      <code>/wo</code>, que Vercel reenvía a <code>api.worldoffice.cloud</code>.
-      <strong>Lo que se envía modifica directamente la contabilidad</strong>: simula primero.
-    </div>
+    <p class="hint">No responde <code>/api/worldoffice</code>. Las plantillas Excel funcionan igual; para enviar por API despliega el backend (en local: <code>npm run wo:dev</code>).</p>
   }
 
   <div class="grid2">
     <div class="field">
-      <label>Token API World Office</label>
-      <input type="password" [(ngModel)]="token" autocomplete="off" placeholder="eyJ…" />
-    </div>
-    <div class="field">
-      <label>Prefijo de autorización</label>
-      <input type="text" [(ngModel)]="authPrefix" />
+      <label>Clave de acceso de la aplicación</label>
+      <input type="password" [(ngModel)]="clave" autocomplete="off" placeholder="La entrega el administrador" />
     </div>
   </div>
 
   <div class="actions">
     <button class="btn-primary btn-small" [disabled]="!puedeConectar()" (click)="conectar()">Conectar y leer catálogos</button>
     <button class="btn-outline btn-small" [disabled]="!puedePreparar()" (click)="preparar()">Preparar documentos</button>
-    <button class="btn-outline btn-small" [disabled]="!puedeExcel()" (click)="descargarPlantilla()">⬇ Plantilla Excel WO</button>
+    <button class="btn-outline btn-small" [disabled]="!puedeExcel()" (click)="descargarPlantillas()">⬇ Plantillas oficiales World Office</button>
     <button class="btn-outline btn-small" [disabled]="!puedeApi()" (click)="simular()">Simular envío</button>
     <button class="btn-secondary btn-small" [disabled]="!puedeApi()" (click)="enviarReal()">Enviar a World Office</button>
     @if (cat() || sesionRecordada()) {
@@ -70,6 +71,9 @@
       <div class="kpi"><div class="val">{{ prep()!.excluidos.length }}</div><div class="lbl">Excluidos · {{ sumExcluidos() }}</div></div>
       <div class="kpi" [class.bad]="prep()!.excepciones.length" [class.ok]="!prep()!.excepciones.length"><div class="val">{{ prep()!.excepciones.length }}</div><div class="lbl">Excepciones · {{ sumExcepciones() }}</div></div>
     </div>
+    @if (soloPlantilla()) {
+      <p class="hint">{{ soloPlantilla() }} documento(s) se cargan solo con la plantilla Excel (no se envían por API): aparecen como «SOLO PLANTILLA».</p>
+    }
 
     <table class="fin-table" style="margin-top:10px;">
       <tr><th>Control de revisoría</th><th>Resultado</th><th>Detalle</th></tr>
@@ -116,7 +120,7 @@
               <td>{{ d.tipo }}</td><td>{{ d.documento }}</td><td style="white-space:nowrap">{{ d.fecha }}</td>
               <td>{{ d.empresaKey }}</td><td>{{ d.cliente }}</td><td>{{ d.nombre }}</td>
               <td>{{ d.concepto }}</td>
-              <td>{{ d.tipo === 'FV' ? d.formaPagoWO : d.asientos.map(a => a.naturaleza + ' ' + a.cuenta).join(' / ') }}</td>
+              <td>{{ d.tipo === 'FV' ? d.formaPagoWO : d.asientos.map(a => a.naturaleza + ' ' + a.cuenta + (a.abonaA ? ' (abona ' + a.abonaA + ')' : '')).join(' / ') }}</td>
               <td>{{ d.tipo === 'FV' ? (d.producto + ' · ' + d.servicio) : d.clase }}</td>
               <td>{{ d.centroCosto || '—' }}</td>
               <td style="text-align:right">{{ fmtCOP(d.valor) }}</td>
@@ -160,8 +164,8 @@
               <tr>
                 <td>{{ l.documento }}</td><td>{{ l.tipo }}</td><td style="text-align:right">{{ fmtCOP(l.valor) }}</td>
                 <td [class.cell-ok]="l.estado === 'CREADO' || l.estado === 'SIMULADO'"
-                    [class.cell-warn]="l.estado === 'YA EXISTE' || l.estado === 'CREADO CON NOVEDAD'"
-                    [class.cell-bad]="l.estado !== 'CREADO' && l.estado !== 'SIMULADO' && l.estado !== 'YA EXISTE' && l.estado !== 'CREADO CON NOVEDAD'">{{ l.estado }}</td>
+                    [class.cell-warn]="l.estado === 'YA EXISTE' || l.estado === 'YA ENVIADO' || l.estado === 'SOLO PLANTILLA' || l.estado === 'CREADO CON NOVEDAD'"
+                    [class.cell-bad]="l.estado === 'ERROR' || l.estado === 'FALTA EN WO'">{{ l.estado }}</td>
                 <td>{{ l.idWO }}</td><td>{{ l.numeroWO }}</td><td>{{ l.detalle }}</td>
                 <td>
                   @if (l.payload) {
@@ -175,5 +179,25 @@
       </div>
       <div class="actions"><button class="btn-outline btn-small" (click)="descargarBitacora()">⬇ Descargar bitácora</button></div>
     }
+  }
+
+  @if (historial().length) {
+    <div class="subtitulo">Historial de envíos a World Office {{ historialPersistente() ? '(compartido)' : '(este navegador)' }}</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Fecha</th><th>Documento</th><th>Operación</th><th>Resultado</th><th>ID WO</th><th>Número WO</th><th>Mensaje</th></tr></thead>
+        <tbody>
+          @for (h of historial().slice(0, 50); track $index) {
+            <tr>
+              <td style="white-space:nowrap">{{ h.fecha.replace('T', ' ').slice(0, 16) }}</td>
+              <td>{{ h.meta?.documento || '—' }}</td><td>{{ operacionDe(h.ruta) }}</td>
+              <td [class.cell-ok]="h.ok" [class.cell-bad]="!h.ok">{{ h.ok ? 'OK' : 'ERROR' }}</td>
+              <td>{{ h.idWO }}</td><td>{{ h.numeroWO }}</td><td>{{ h.mensaje }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="actions"><button class="btn-outline btn-small" (click)="descargarHistorial()">⬇ Descargar historial completo</button></div>
   }
 </section>
