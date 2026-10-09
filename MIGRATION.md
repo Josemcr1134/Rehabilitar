@@ -43,25 +43,37 @@ preguntó explícitamente al usuario antes de implementarlo así y la respuesta 
 veces (incluir "Subir archivos" en el guard a pesar de la advertencia). No "arreglar" esto sin
 volver a preguntar.
 
-## ⚠️ Desviación deliberada: el token de World Office se guarda en el navegador
+## ⚠️ Decisión de seguridad: el token de World Office vive SOLO en el servidor (2026-10-09)
 
-El `index.html` original pedía el token de World Office en pantalla cada vez y nunca lo guardaba
-(CLAUDE.md sección 15: *"Se pega en pantalla cada vez; no se guarda"*). En la migración a Angular
-esto cambió a propósito (decisión de producto, 2026-10-07), después de revisar la documentación
-oficial de World Office (developer.worldoffice.cloud): **no existe un login usuario/contraseña por
-API como el de Medifolios** — el único token válido se copia a mano desde la interfaz web de World
-Office (Configuración › Configuración General › API), con una expiración que puede fijarse hasta el
-vencimiento de la licencia. Como quien usa esta pestaña no es técnico, pedir ese token en cada
-sesión era la única fricción real que se podía reducir.
+**Reemplaza** la decisión anterior del 2026-10-07 (token guardado en `localStorage`). Requisito
+explícito de la integración con World Office: *"Las credenciales, API Keys o tokens de World Office
+deben permanecer en el backend/variables de entorno y nunca quedar expuestos en el frontend."*
+Confirmar este cambio con el responsable del repositorio (CODEOWNERS) antes de fusionar.
 
-Implementación (`core/services/world-office.service.ts`): el token se guarda en
-`localStorage` (clave `rehabilitar_wo_token_v1`) tras un `conectar()` exitoso, se borra solo si
-World Office lo rechaza (401/403) o si la persona hace clic en **"Cerrar sesión de World Office"**
-(botón visible en la página, llama a `wo.cerrarSesion()`). Al volver a la página, si hay un token
-guardado y no hay catálogos cargados en memoria, `WorldOffice` (el componente) reconecta solo, sin
-que la persona tenga que hacer nada. Riesgo aceptado a propósito: cualquiera con acceso a ese
-navegador puede crear/anular documentos reales en la contabilidad sin que se le vuelva a pedir el
-token — por eso el botón de cerrar sesión está siempre visible mientras hay una sesión activa.
+- **Backend:** `api/worldoffice.js` (función serverless de Vercel). Es el único que habla con
+  `https://api.worldoffice.cloud/api/v1`, con el encabezado `Authorization: WO <WO_API_TOKEN>`.
+  Solo permite una lista blanca de rutas (lecturas de catálogos/consultas y creación, contabilización
+  y anulación de facturas y documentos contables). Se eliminó el reenvío directo `/wo/*` de
+  `vercel.json` y `proxy.conf.json`: el navegador ya no puede llamar a World Office por su cuenta.
+- **Variables de entorno (Vercel › Settings › Environment Variables):**
+  - `WO_API_TOKEN` — token generado en World Office › Configuración › Configuración General › API.
+  - `APP_ACCESS_KEY` — clave que escribe la persona en la página para poder usar el backend.
+  - Opcionales `KV_REST_API_URL` / `KV_REST_API_TOKEN` (Upstash / Vercel KV): historial compartido de
+    envíos y bloqueo anti-duplicados del lado del servidor. Sin ellas, el historial queda solo en el
+    navegador y el control de duplicados se hace consultando World Office antes de crear.
+- **Navegador:** solo guarda la clave de la app en `sessionStorage` (`rehabilitar_wo_clave_v1`), que
+  se olvida al cerrar la pestaña o con «Cerrar sesión de World Office». Nunca recibe el token.
+- **Duplicados:** cada documento tiene una clave `EMPRESA|DOCUMENTO`; el backend responde 409 si ya
+  se creó (historial KV) o si otra sesión lo está enviando (bloqueo de 120 s). Además, el cliente
+  busca en World Office la factura (prefijo+número) o el recibo (documento dentro del concepto).
+- **Desarrollo local:** copiar `.env.example` a `.env.local` (no se sube: está en `.gitignore`),
+  correr `npm run wo:dev` (backend en el puerto 3001) y en otra terminal `npm start`; el proxy envía
+  `/api/worldoffice` al 3001.
+- **Plantillas oficiales:** `public/plantillas-wo/` (factura de venta y recibo de caja, sin
+  modificar). World Office no tiene endpoint para subir esos Excel: la página los descarga llenos
+  (`core/utils/world-office-plantillas.util.ts`) para cargarlos a mano en World Office, y la API crea
+  los documentos uno por uno. Los abonos a deuda (`RCR-A`/`RCL-A`) van solo por plantilla mientras
+  `WO_CONFIG.recibosDeudaPorAPI = false` (requieren cruce de cartera).
 
 ## Arquitectura
 
@@ -117,8 +129,8 @@ leer/escribir Excel.
 | **Página: Exportar (Excel)** | ✅ Funcional | Card "14. Exportar" — botón "Descargar Excel" |
 | `core/models/world-office.model.ts` | ✅ Completo | `WO_CONFIG`, `TABLA_A`, `PRODUCTO`, `CENTROS` |
 | `core/utils/world-office.util.ts` | ✅ Completo | `servicioDe`, `centroDe`, `itemsDe`, `conceptoCombinado`, `prepararDocumentos`, `controles` — con pruebas en `world-office.util.spec.ts` |
-| `core/services/world-office.service.ts` | ✅ Completo | `woFetch`, `listarTodo`, `cargarCatalogos`, `armarFactura`, `armarRecibo`, `buscarExistente`/`yaExiste`, `enviar`, `descargarPlantilla`, `descargarBitacora` |
-| **Página: World Office** | ✅ Funcional | Tarjeta "World Office · Facturas (FV) y recibos (RC) desde Caja" (CLAUDE.md sección 15) — Conectar → Preparar → Simular/Enviar, catálogos, tabla de documentos con selección, bitácora |
+| `core/services/world-office.service.ts` | ✅ Completo | `woFetch`, `listarTodo`, `cargarCatalogos`, `armarFactura`, `armarRecibo`, `buscarExistente`/`yaExiste`, `enviar`, `descargarPlantillas` (plantillas oficiales), `descargarBitacora`, `cargarHistorial`/`descargarHistorial` — todo a través de `/api/worldoffice` |
+| **Página: World Office** | ✅ Funcional | Tarjeta "World Office · Facturas (FV) y recibos (RC) desde Caja" (CLAUDE.md sección 15) — Clave de la app → Preparar → Plantillas oficiales / Simular / Enviar, estado del servidor, catálogos, tabla de documentos con selección, bitácora e historial |
 | **Dashboard HTML** (`btnDashboard`) | 🚧 No migrado todavía | Genera `Dashboard_Rehabilitar_<periodo>.html` autocontenido — no tiene página ni servicio propio aún |
 
 Nota: las páginas RIPS/IA y Cabecera Facturación mencionadas en el hallazgo de arriba **no existen
@@ -138,8 +150,10 @@ para no migrar funcionalidad fantasma.
    de World Office: 51 movimientos, 25 facturas $661.900, 6 recibos $429.500).
 3. **World Office: probar contra la cuenta real** (CLAUDE.md sección 15, pendiente 1) — lo migrado
    aquí reproduce la lógica tal cual estaba en index.html, pero esa lógica en sí nunca se probó
-   contra la API real de World Office (solo contra una API simulada). "Conectar" → revisar catálogos
-   en rojo → "Simular" → enviar 2-3 documentos.
+   contra la API real de World Office (solo contra una API simulada). Configurar `WO_API_TOKEN` y
+   `APP_ACCESS_KEY` en Vercel → "Conectar" con la clave → revisar catálogos en rojo → "Simular" →
+   enviar 2-3 documentos. Confirmar con contabilidad los códigos WO de los prefijos `RCR-A`/`RCL-A`
+   (`WO_CONFIG.prefijoWO`, la plantilla admite máximo 4 caracteres) y las cuentas de los recibos.
 4. **Desplegar en Vercel** — `vercel.json` ya existe en esta carpeta, pero como el proyecto vive en
    `LILIAN/rehabilitar-angular/` y `LILIAN/` tiene su propio `vercel.json` (el del index.html en
    producción), el proyecto de Vercel para Angular debe tener **Root Directory =
