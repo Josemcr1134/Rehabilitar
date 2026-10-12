@@ -2,19 +2,16 @@
  * Integración con World Office (facturas FV y recibos RC desde CAJA).
  * Migrada 1:1 desde el bloque <script> final de index.html (CLAUDE.md sección 15).
  *
- * Toda la configuración editable por contabilidad vive en WO_CONFIG, igual que
- * en el original — se muta en caliente desde la página (authPrefix) en vez de
- * vivir en un signal, porque así se comportaba el objeto global original.
- * `apiBase` es la única excepción: es un prefijo de infraestructura (lo
- * reescribe proxy.conf.json/vercel.json hacia el host real de World Office),
- * no una regla de negocio, así que sale de `environment` y no de un literal
- * fijo aquí.
+ * Toda la configuración editable por contabilidad vive en WO_CONFIG.
+ * `apiBase` es la única excepción: es la ruta del backend propio
+ * (/api/worldoffice → api/worldoffice.js), que guarda el token de World Office
+ * en una variable de entorno y hace las llamadas; sale de `environment`.
  */
 import { environment } from '../../../environments/environment';
 
 export interface WoConfig {
+  /** Backend propio (api/worldoffice.js): es el único que conoce el token de World Office. */
   apiBase: string;
-  authPrefix: string;
   vendedorIdentificacion: string;
   empresas: { REHABILITAR: string; LILIAN: string };
   prefijosLilian: string[];
@@ -33,11 +30,17 @@ export interface WoConfig {
   cuentaCreditoAnticipo: string;
   cuentaCreditoDeuda: string;
   formaPagoContable: Record<string, string | null>;
+  /**
+   * Los abonos a deuda (RCR-A / RCL-A) deben cruzarse con la factura que pagan
+   * («Abona A» en la plantilla oficial de recibos). Por API eso son dos pasos
+   * (crear RC + cruzarCuentas) que aún no se han probado con la cuenta real, así
+   * que mientras esté en false esos recibos van SOLO en la plantilla Excel.
+   */
+  recibosDeudaPorAPI: boolean;
 }
 
 export const WO_CONFIG: WoConfig = {
   apiBase: environment.worldOfficeApiBase,
-  authPrefix: 'WO ',
   vendedorIdentificacion: '32783738',
   empresas: {
     REHABILITAR: 'CENTRO DE TERAPIAS INTEGRADAS REHABILITAR S.A.S',
@@ -67,6 +70,7 @@ export const WO_CONFIG: WoConfig = {
     EFECTIVO: 'Efectivo', TARJETA: null, 'TRANSFERENCIA A DAVIVIENDA': null,
     TRANSFERENCIA_BANCOLOMBIA_REHABILITAR: null, TRANSFERENCIA_BANCOLOMBIA_LILIAN: null,
   },
+  recibosDeudaPorAPI: false,
 };
 
 export interface ReglaTablaA { grupo: 'PAGO' | 'CREDITO' | 'ANTICIPO'; concepto: string; forma: string }
@@ -105,11 +109,22 @@ export const CENTROS: Array<[RegExp, string]> = [
 ];
 
 export interface Pago { forma: string; valor: number; origen: string }
-export interface Asiento { naturaleza: 'D' | 'C'; cuenta: string; valor: number; forma?: string }
+export interface Asiento {
+  naturaleza: 'D' | 'C';
+  cuenta: string;
+  valor: number;
+  forma?: string;
+  /** Columna «Abona A» de la plantilla de recibos: «FV <prefijo> <número>» de la factura que se abona. */
+  abonaA?: string;
+}
 
 interface DocumentoBase {
+  /** Llave única para el control de duplicados e historial: «EMPRESA|DOCUMENTO» (ej. «REHABILITAR|R-15993»). */
+  clave: string;
   documento: string;
   prefijo: string;
+  /** Prefijo tal como existe en World Office (WO_CONFIG.prefijoWO o el mismo de Medifolios). */
+  prefijoWO: string;
   numero: number | null;
   fecha: string;
   fechaRegistro: string;
@@ -124,6 +139,8 @@ interface DocumentoBase {
   movimientos: number;
   formasOrigen: string;
   avisos: string[];
+  /** false = no se envía por la API; solo va en la plantilla Excel (ej. abonos a deuda). */
+  envioAPI: boolean;
 }
 
 export interface FacturaWO extends DocumentoBase {
@@ -143,6 +160,8 @@ export interface ReciboWO extends DocumentoBase {
   clase: 'ANTICIPO' | 'PAGO DE DEUDA';
   concepto: string;
   centroCosto: string;
+  /** Solo abonos a deuda: factura que se abona («FV R 15832»). Vacío en anticipos. */
+  abonaA: string;
   asientos: Asiento[];
 }
 
@@ -184,6 +203,22 @@ export interface FilaBitacora {
   numeroWO: string | number;
   detalle: string;
   payload: unknown;
+}
+
+/** GET /api/worldoffice?accion=estado — qué está configurado en el servidor (nunca los valores). */
+export interface EstadoServidorWO { tokenConfigurado: boolean; claveConfigurada: boolean; historialCompartido: boolean; base: string }
+
+/** Un registro del historial de envíos (servidor o, de respaldo, este navegador). */
+export interface RegistroHistorialWO {
+  fecha: string;
+  clave: string;
+  ruta: string;
+  ok: boolean;
+  creado: boolean;
+  idWO: string | number | null;
+  numeroWO: string | number | null;
+  mensaje: string;
+  meta?: { documento?: string; valor?: number; [k: string]: unknown };
 }
 
 export interface OpcionesEnvio {

@@ -2,7 +2,7 @@ import { JsonPipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AppStateService } from '../../core/services/app-state.service';
-import { WorldOfficeService } from '../../core/services/world-office.service';
+import { operacionDe, WorldOfficeService } from '../../core/services/world-office.service';
 import { CENTROS, FacturaWO, ReciboWO, TABLA_A, WO_CONFIG } from '../../core/models/world-office.model';
 import { fmtCOP, key, prepararDocumentos } from '../../core/utils/world-office.util';
 
@@ -25,10 +25,11 @@ export class WorldOffice {
   readonly wo = inject(WorldOfficeService);
   readonly fmtCOP = fmtCOP;
 
-  token = '';
-  authPrefix = WO_CONFIG.authPrefix;
-  /** true si el token viene de una sesión anterior (se precargó solo, no lo acaba de escribir la persona). */
+  /** Clave de acceso de la aplicación (APP_ACCESS_KEY). El token de World Office NO pasa por el navegador. */
+  clave = '';
+  /** true si la clave se recordó de esta misma pestaña (sessionStorage). */
   readonly sesionRecordada = signal(false);
+  readonly operacionDe = operacionDe;
 
   readonly conservarNumero = signal(true);
   readonly contabilizar = signal(true);
@@ -43,6 +44,9 @@ export class WorldOffice {
   readonly prep = this.wo.prep;
   readonly cat = this.wo.cat;
   readonly log = this.wo.log;
+  readonly estadoServidor = this.wo.estadoServidor;
+  readonly historial = this.wo.historial;
+  readonly historialPersistente = this.wo.historialPersistente;
 
   readonly cajaInfo = computed(() => {
     const caja = this.caja();
@@ -58,6 +62,9 @@ export class WorldOffice {
   readonly sumRecibos = computed(() => fmtCOP((this.prep()?.recibos || []).reduce((s, x) => s + x.valor, 0)));
   readonly sumExcluidos = computed(() => fmtCOP((this.prep()?.excluidos || []).reduce((s, x) => s + x.valor, 0)));
   readonly sumExcepciones = computed(() => fmtCOP((this.prep()?.excepciones || []).reduce((s, x) => s + x.valor, 0)));
+
+  /** Documentos que solo se cargan con la plantilla Excel (p. ej. abonos a deuda mientras recibosDeudaPorAPI = false). */
+  readonly soloPlantilla = computed(() => this.docsVisibles().filter((d) => !d.envioAPI).length);
 
   readonly docsVisibles = computed<DocumentoWO[]>(() => {
     const p = this.prep();
@@ -81,12 +88,13 @@ export class WorldOffice {
   });
 
   constructor() {
-    const guardado = this.wo.tokenGuardado();
-    if (guardado && !this.wo.cat()) {
-      this.token = guardado.token;
-      this.authPrefix = guardado.authPrefix;
+    void this.wo.consultarEstado();
+    void this.wo.cargarHistorial();
+    const guardada = this.wo.claveApp();
+    if (guardada && !this.wo.cat()) {
+      this.clave = guardada;
       this.sesionRecordada.set(true);
-      this.conectar();
+      void this.conectar();
     }
   }
 
@@ -100,17 +108,16 @@ export class WorldOffice {
   async conectar() {
     this.bloqueado.set(true);
     this.mensaje.set('Leyendo catálogos de World Office…');
-    const r = await this.wo.conectar(this.token, this.authPrefix);
+    const r = await this.wo.conectar(this.clave);
     this.mensaje.set(r.mensaje);
     this.bloqueado.set(false);
     if (!r.ok) this.sesionRecordada.set(false);
   }
 
-  /** Olvida el token guardado en este navegador — para cuando el equipo se comparte. */
+  /** Olvida la clave de la app en esta pestaña — para cuando el equipo se comparte. */
   cerrarSesionWO() {
     this.wo.cerrarSesion();
-    this.token = '';
-    this.authPrefix = WO_CONFIG.authPrefix;
+    this.clave = '';
     this.sesionRecordada.set(false);
     this.deseleccionados.set(new Set());
     this.mensaje.set('Sesión de World Office cerrada en este navegador.');
@@ -157,6 +164,10 @@ export class WorldOffice {
     this.mensaje.set(`${simular ? 'Simulación terminada' : 'Envío terminado'}: ${ok} de ${total} ${simular ? 'listos' : 'creados'}. Revisa la bitácora.`);
   }
 
-  descargarPlantilla() { this.wo.descargarPlantilla(); }
-  descargarBitacora() { this.wo.descargarBitacora(); }
+  async descargarPlantillas() {
+    try { await this.wo.descargarPlantillas(); this.mensaje.set('Plantillas oficiales de World Office descargadas.'); }
+    catch (e) { this.mensaje.set('No se pudieron generar las plantillas: ' + (e instanceof Error ? e.message : String(e))); }
+  }
+  descargarBitacora() { void this.wo.descargarBitacora(); }
+  descargarHistorial() { void this.wo.descargarHistorial(); }
 }

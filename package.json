@@ -6,7 +6,8 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "wo:dev": "node scripts/worldoffice-dev.cjs"
   },
   "private": true,
   "packageManager": "npm@11.9.0",

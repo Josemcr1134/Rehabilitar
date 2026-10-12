@@ -42,3 +42,8 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+
+# Variables de entorno locales (tokens y claves): nunca se suben al repositorio
+.env
+.env.*
+!.env.example
