@@ -1,0 +1,265 @@
+<section class="card">
+  <h2>Notas contables · World Office</h2>
+  <p class="hint">
+    Arma las notas de contabilidad en la <strong>plantilla oficial</strong> de World Office (PlantillaNotasDeContabilidad).
+    Todo lo de la «L» es de Lilian (APL, AEL, APLR) y lo demás de Rehabilitar. Solo entran las citas <strong>CUMPLIDAS</strong>.
+  </p>
+
+  <div class="tabs-origen">
+    <button class="btn-small" [class.btn-primary]="origen() === 'agenda'" [class.btn-outline]="origen() !== 'agenda'" (click)="cambiarOrigen('agenda')">
+      Asume paciente / asume entidad (agenda)
+    </button>
+    <button class="btn-small" [class.btn-primary]="origen() === 'caja'" [class.btn-outline]="origen() !== 'caja'" (click)="cambiarOrigen('caja')">
+      Reversiones (diario de caja)
+    </button>
+  </div>
+
+  @if (origen() === 'agenda') {
+    <p class="hint">Sube el <strong>reporte de agenda diaria</strong> de Medifolios. Los valores salen de la REFERENCIA de cada cita (TAR · PAC · ENT).
+      Prefijos: <code>AP</code>, <code>APL</code> (asume paciente) y <code>AE</code>, <code>AEL</code> (asume entidad).</p>
+  } @else {
+    <p class="hint">Sube el <strong>reporte de caja</strong> de Medifolios (el mismo de World Office). Una línea por factura R, COPG, COPL o LA
+      con lo que pagó el paciente; sin pagos de entidad, anticipos copago, «sin valor» ni anulados. Prefijos: <code>APR</code> y <code>APLR</code>.</p>
+    <p class="hint">Las reversiones de asume entidad (<code>AER</code>, <code>AELR</code>) quedan pendientes: falta que contabilidad confirme de qué movimiento salen.</p>
+  }
+  <p class="hint">{{ fuenteInfo() }}</p>
+
+  <app-file-drop
+    [etiqueta]="origen() === 'agenda' ? 'Agenda de citas (Medifolios)' : 'Diario de caja (Medifolios)'"
+    [mensaje]="estadoArchivo().mensaje"
+    [error]="estadoArchivo().error"
+    (archivoSeleccionado)="onArchivo($event)" />
+
+  <div class="subtitulo">Prefijos y numeración</div>
+  <p class="hint">La numeración sigue la de las últimas notas cargadas en World Office. Revisa el número con el que empieza cada prefijo.</p>
+  <div class="numeros">
+    @for (p of prefijosOrigen(); track p) {
+      <label class="numero">
+        <span><input type="checkbox" [checked]="marcado(p)" (change)="toggle(p)" /> <strong>{{ p }}</strong> · {{ descripcion[p] }}</span>
+        <input type="number" min="1" step="1" [(ngModel)]="numeros[p]" [disabled]="!marcado(p)" />
+      </label>
+    }
+  </div>
+  <div class="filters" style="margin-top:8px;">
+    <label class="rango">Desde <input type="date" [(ngModel)]="desde" /></label>
+    <label class="rango">Hasta <input type="date" [(ngModel)]="hasta" /></label>
+    <button class="btn-outline btn-small" (click)="restaurarNumeros()">Restaurar numeración</button>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary btn-small" [disabled]="bloqueado() || !(origen() === 'agenda' ? agenda()?.length : caja()?.length)" (click)="generar()">Generar notas</button>
+  </div>
+
+  <p class="hint mensaje">{{ mensaje() }}</p>
+
+  @if (generado()) {
+    @if (resumen().length) {
+      <div class="subtitulo">Notas generadas</div>
+      <table class="fin-table">
+        <tr><th>Prefijo</th><th>Notas</th><th>Números</th><th>Fechas</th><th>Líneas</th><th>Total</th><th>Cuadre</th><th>Plantilla</th></tr>
+        @for (r of resumen(); track r.prefijo) {
+          <tr>
+            <td style="text-align:left"><strong>{{ r.prefijo }}</strong> · {{ r.descripcion }}</td>
+            <td>{{ r.notas }}</td>
+            <td>{{ r.desde }} – {{ r.hasta }}</td>
+            <td style="white-space:nowrap">{{ r.fechas }}</td>
+            <td>{{ r.lineas }}</td>
+            <td style="text-align:right">{{ fmtCOP(r.total) }}</td>
+            <td [class.cell-ok]="!r.descuadradas" [class.cell-bad]="r.descuadradas">{{ r.descuadradas ? r.descuadradas + ' descuadrada(s)' : 'OK' }}</td>
+            <td>
+              <button class="btn-outline btn-small" [disabled]="bloqueado() || r.descuadradas" (click)="descargar(r)">⬇ NC {{ r.prefijo }}</button>
+              <button class="btn-outline btn-small" (click)="yaCargada(r)" title="Úsalo cuando World Office haya aceptado la plantilla">Ya la cargué</button>
+            </td>
+          </tr>
+        }
+      </table>
+      <div class="actions">
+        <button class="btn-primary btn-small" [disabled]="bloqueado() || !notas().length" (click)="descargarTodo()">
+          ⬇ Plantilla de notas completa ({{ notas().length }} nota(s) · {{ origen() === 'agenda' ? 'asume paciente y asume entidad' : 'reversiones' }})
+        </button>
+      </div>
+      <p class="hint">La plantilla completa trae todos los prefijos generados en un solo archivo PlantillaNotasDeContabilidad, para revisarla en Excel o cargarla de una vez. Los botones «NC» de la tabla bajan un archivo por prefijo.</p>
+    }
+
+    <div class="subtitulo">Pacientes nuevos (terceros que no existen en World Office)</div>
+    <p class="hint">
+      Cada línea de la nota lleva como tercero al paciente. Si alguno no existe en World Office, la plantilla de notas no carga:
+      revísalos aquí y, solo si hay nuevos, descarga la plantilla de terceros e impórtala primero.
+    </p>
+    <div class="actions">
+      @if (!cat()) {
+        <input type="password" style="max-width:260px" [(ngModel)]="clave" autocomplete="off" placeholder="Clave de acceso de la aplicación" />
+        <button class="btn-primary btn-small" [disabled]="bloqueado()" (click)="conectar()">Conectar con World Office</button>
+      }
+      <button class="btn-outline btn-small" [disabled]="bloqueado() || !cat() || !notas().length" (click)="revisarPacientes()">Revisar pacientes nuevos</button>
+    </div>
+
+    <div class="filters" style="margin:6px 0;">
+      <span class="hint" style="margin:0;">Cabecera de facturación (dirección, teléfono y correo):</span>
+      <input type="file" accept=".xlsx" multiple style="max-width:340px;" [disabled]="bloqueado()" (change)="onCabecera($event)" />
+      @if (archivosCabecera().length) {
+        <span class="hint" style="margin:0;">{{ contactosCabecera().size }} paciente(s) con datos</span>
+        <button class="btn-outline btn-small" (click)="limpiarCabecera()">Quitar cabecera</button>
+      }
+    </div>
+
+    @if (pacientesRevisados() && pacientesNuevos(); as nuevos) {
+      @if (!nuevos.length) {
+        <p class="hint cell-ok" style="padding:6px">Todos los pacientes ya existen en World Office: no hace falta plantilla de terceros.</p>
+      } @else {
+        <div class="filters" style="margin:6px 0;">
+          <input type="text" style="max-width:260px;" [(ngModel)]="ciudadTodos" list="nc-ciudades" placeholder="Ciudad (de la lista de World Office)" />
+          <button class="btn-outline btn-small" [disabled]="!ciudadTodos.trim()" (click)="aplicarCiudadATodos()">Aplicar ciudad a todos</button>
+          <button class="btn-primary btn-small" [disabled]="bloqueado() || !pacientesCompletos().length" (click)="descargarPlantillaTerceros()">
+            ⬇ Plantilla de terceros ({{ pacientesCompletos().length }} de {{ nuevos.length }} completos)
+          </button>
+        </div>
+        <datalist id="nc-ciudades">
+          @for (c of ciudadesWO(); track c) { <option [value]="c"></option> }
+        </datalist>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Identificación</th><th>Nombre</th><th>Tipo ID</th><th>Primer nombre / razón social</th><th>Segundo nombre</th>
+                <th>Primer apellido</th><th>Segundo apellido</th><th>Ciudad</th><th>Dirección</th><th>Teléfono</th><th>Email</th>
+                <th>Cabecera</th><th>Notas</th><th>Falta</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (t of nuevos; track t.identificacion) {
+                <tr>
+                  <td>{{ t.identificacion }}</td>
+                  <td>{{ t.nombreCompleto }}</td>
+                  <td>
+                    <select style="min-width:170px" [(ngModel)]="t.tipoIdentificacion">
+                      @for (ti of tiposIdentificacion; track ti) { <option [value]="ti">{{ ti }}</option> }
+                    </select>
+                  </td>
+                  <td><input type="text" style="min-width:120px" [(ngModel)]="t.primerNombre" maxlength="50" /></td>
+                  <td><input type="text" style="min-width:110px" [(ngModel)]="t.segundoNombre" maxlength="50" /></td>
+                  <td><input type="text" style="min-width:110px" [(ngModel)]="t.primerApellido" maxlength="50" /></td>
+                  <td><input type="text" style="min-width:110px" [(ngModel)]="t.segundoApellido" maxlength="50" /></td>
+                  <td><input type="text" style="min-width:130px" [(ngModel)]="t.ciudad" list="nc-ciudades" /></td>
+                  <td><input type="text" style="min-width:170px" [(ngModel)]="t.direccion" maxlength="500" placeholder="CL 1 2 3" /></td>
+                  <td><input type="text" style="min-width:120px" inputmode="numeric" [(ngModel)]="t.telefono" placeholder="3001234567" /></td>
+                  <td><input type="text" style="min-width:200px" inputmode="email" [(ngModel)]="t.email" maxlength="60" placeholder="nombre@correo.com" /></td>
+                  <td [class.cell-ok]="t.enCabecera === true" [class.cell-warn]="t.enCabecera === false">
+                    {{ t.enCabecera === null ? '—' : t.enCabecera ? 'Encontrado' : 'No está' }}
+                  </td>
+                  <td>{{ t.documentos.join(', ') }}</td>
+                  @if (erroresPaciente(t); as err) {
+                    <td [class.cell-ok]="!err.length" [class.cell-warn]="err.length">
+                      {{ err.length ? err.join(' · ') : 'Completo' }}
+                      @if (t.avisos.length) { <br /><small>{{ t.avisos.join(' · ') }}</small> }
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    }
+
+
+    @if (notas().length) {
+      <div class="subtitulo">Enviar a World Office</div>
+      <p class="hint">
+        Crea las notas directamente en World Office por la API (igual que las facturas y recibos de la otra pestaña).
+        Simula primero: valida empresa, prefijo, cuentas, pacientes y centros de costos sin crear nada.
+      </p>
+      <div class="filters">
+        <label class="rango">
+          <input type="checkbox" style="width:auto;" [checked]="conservarNumero()" (change)="conservarNumero.set($any($event.target).checked)" />
+          Conservar el número de la nota (APL 406 → 406)
+        </label>
+        <label class="rango">
+          <input type="checkbox" style="width:auto;" [checked]="verificarDuplicados()" (change)="verificarDuplicados.set($any($event.target).checked)" />
+          Verificar duplicados antes de enviar
+        </label>
+      </div>
+      <div class="actions">
+        @if (!cat()) { <span class="hint" style="margin:0;">Conecta con World Office (arriba, en «Pacientes nuevos») para simular o enviar.</span> }
+        <button class="btn-outline btn-small" [disabled]="!puedeEnviar()" (click)="simular()">Simular envío</button>
+        <button class="btn-secondary btn-small" [disabled]="!puedeEnviar()" (click)="enviarReal()">Enviar a World Office</button>
+      </div>
+
+      @if (logNotas().length) {
+        <div class="subtitulo">Bitácora del envío de notas</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Nota</th><th>Valor</th><th>Estado</th><th>ID WO</th><th>Número WO</th><th>Detalle</th><th>Payload</th></tr></thead>
+            <tbody>
+              @for (l of logNotas(); track l.documento + l.estado) {
+                <tr>
+                  <td>{{ l.documento }}</td><td style="text-align:right">{{ fmtCOP(l.valor) }}</td>
+                  <td [class.cell-ok]="l.estado === 'CREADO' || l.estado === 'SIMULADO'"
+                      [class.cell-warn]="l.estado === 'YA EXISTE' || l.estado === 'YA ENVIADO' || l.estado === 'CREADO CON NOVEDAD' || l.estado === 'PENDIENTE DE CONFIRMAR'"
+                      [class.cell-bad]="l.estado === 'ERROR' || l.estado === 'FALTA EN WO'">{{ l.estado }}</td>
+                  <td>{{ l.idWO }}</td><td>{{ l.numeroWO }}</td><td style="text-align:left">{{ l.detalle }}</td>
+                  <td>
+                    @if (l.payload) {
+                      <details><summary style="cursor:pointer;font-size:11px;">ver JSON</summary><pre style="white-space:pre-wrap;font-size:10px;max-width:420px;">{{ l.payload | json }}</pre></details>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <div class="actions"><button class="btn-outline btn-small" (click)="descargarBitacora()">⬇ Descargar bitácora</button></div>
+      }
+    }
+
+    @if (notas().length) {
+      <div class="subtitulo">Detalle por nota</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Nota</th><th>Fecha</th><th>Concepto</th><th>Líneas</th><th>Total</th><th>Cuadre</th><th></th></tr></thead>
+          <tbody>
+            @for (n of notas(); track claveNota(n)) {
+              <tr>
+                <td>{{ claveNota(n) }}</td><td style="white-space:nowrap">{{ n.fecha }}</td><td>{{ n.concepto }}</td>
+                <td>{{ n.lineas.length }}</td><td style="text-align:right">{{ fmtCOP(totalNota(n)) }}</td>
+                <td [class.cell-ok]="cuadrada(n)" [class.cell-bad]="!cuadrada(n)">{{ cuadrada(n) ? 'OK' : 'DESCUADRADA' }}</td>
+                <td><button class="btn-outline btn-small" (click)="alternarDetalle(n)">{{ verDetalle() === claveNota(n) ? 'Ocultar' : 'Ver' }}</button></td>
+              </tr>
+              @if (verDetalle() === claveNota(n)) {
+                <tr>
+                  <td colspan="7" style="padding:0">
+                    <table class="detalle">
+                      <tr><th>Cuenta</th><th>Concepto del movimiento</th><th>Tercero</th><th>Débito</th><th>Crédito</th><th>Centro de costos</th></tr>
+                      @for (l of n.lineas; track $index) {
+                        <tr>
+                          <td>{{ l.cuenta }}</td><td style="text-align:left">{{ l.concepto }}</td><td>{{ l.tercero }}</td>
+                          <td style="text-align:right">{{ l.debito ? fmtCOP(l.debito) : '' }}</td>
+                          <td style="text-align:right">{{ l.credito ? fmtCOP(l.credito) : '' }}</td>
+                          <td>{{ l.centroCosto || '—' }}</td>
+                        </tr>
+                      }
+                    </table>
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    @if (omitidas().length) {
+      <div class="subtitulo">No generaron línea ({{ omitidas().length }})</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Fecha</th><th>Documento / referencia</th><th>Identificación</th><th>Nombre</th><th>Motivo</th></tr></thead>
+          <tbody>
+            @for (o of omitidas(); track $index) {
+              <tr><td style="white-space:nowrap">{{ o.fecha }}</td><td style="text-align:left">{{ o.documento }}</td><td>{{ o.id }}</td><td>{{ o.nombre }}</td><td class="cell-warn">{{ o.motivo }}</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</section>

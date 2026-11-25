@@ -6,13 +6,20 @@
 } @else {
   <section class="card">
     <h2>10. Conciliación por servicio <span class="subt">— hoja «Por servicio» del Excel</span></h2>
+    <div class="filters">
+      <input type="text" placeholder="Buscar por paciente, documento o servicio..." [value]="busqueda()" (input)="busqueda.set($any($event.target).value)" />
+      <select [value]="filtroEstado()" (change)="filtroEstado.set($any($event.target).value)">
+        <option value="">Todos los estados</option>
+        @for (e of estados(); track e) { <option [value]="e">{{ e }}</option> }
+      </select>
+    </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Paciente</th><th>Servicio</th><th>AG</th><th>CJ</th><th>CO</th><th>Estado</th><th>Validación</th></tr></thead>
+        <thead><tr><th>Documento</th><th>Paciente</th><th>Servicio</th><th>AG</th><th>CJ</th><th>CO</th><th>Estado</th><th>Validación</th></tr></thead>
         <tbody>
           @for (s of filas(); track s.id + s.servicio) {
             <tr>
-              <td>{{ s.nombre }}</td><td>{{ s.servicio }}</td><td>{{ s.ag }}</td><td>{{ s.cj }}</td><td>{{ s.co }}</td>
+              <td>{{ s.id }}</td><td>{{ s.nombre }}</td><td>{{ s.servicio }}</td><td>{{ s.ag }}</td><td>{{ s.cj }}</td><td>{{ s.co }}</td>
               <td><span class="tag" [class]="tagFor(s.estado)">{{ s.estado }}</span></td>
               <td [class.cell-ok]="s.aprobado">{{ s.notaAprobado || '—' }}</td>
             </tr>
@@ -20,6 +27,6 @@
         </tbody>
       </table>
     </div>
-    <p class="hint">{{ servicios().length }} combinaciones paciente/servicio (mostrando máx. 500 filas)</p>
+    <p class="hint">{{ filtradas().length }} de {{ servicios().length }} combinaciones paciente/servicio · {{ pacientes() }} paciente(s) por documento de identidad (mostrando máx. 500 filas)</p>
   </section>
 }

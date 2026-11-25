@@ -1,28 +1,20 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ConciliarOrchestratorService } from '../../core/services/conciliar-orchestrator.service';
 import { GrupoConciliacion, okColumn } from '../../core/utils/comparacion.util';
+import { ServicioRow } from '../../core/models/conciliacion-resultado.model';
 import { AppStateService } from '../../core/services/app-state.service';
-
-const ESTADO_COLORES: Record<string, string> = {
-  Conciliado: '#28A028', 'Conteo diferente': '#F0C800', 'Solo agenda': '#C80078',
-  'Solo caja': '#C80078', 'Solo consumo': '#C80078', Incompleto: '#F0A028',
-};
-const CAT_COLORES: Record<string, string> = {
-  PAGO_NORMAL: '#28A028', ANTICIPO: '#F0C800', ANTICIPO_EMPRESA: '#F0A028', TRANSF_FACTURACION: '#005078',
-  CREDITO: '#C80078', AJUSTE: '#7a7a7a', ANULADO: '#b23b3b', SIN_VALOR: '#aeb6bd',
-};
+import { Resumen } from '../resumen/resumen';
 
 /**
- * Card «4. Conciliar» + «6. Distribución por estado» + «7. Movimientos de CAJA
- * por categoría» + «9. Conciliación por paciente» del index.html original —
- * se agrupan en una sola página porque en el original se disparan todas del
- * mismo botón y se muestran en secuencia inmediatamente después.
+ * Card «4. Conciliar» + «5. Resumen ejecutivo» + «9. Conciliación por paciente».
+ * Al conciliar se muestra de una vez el resumen ejecutivo (el mismo componente de
+ * la pestaña «Resumen»). Las gráficas de barras «6. Distribución por estado» y
+ * «7. Movimientos de CAJA por categoría» se quitaron a pedido del usuario.
  */
 @Component({
   selector: 'app-conciliar',
-  imports: [FormsModule, DecimalPipe],
+  imports: [FormsModule, Resumen],
   templateUrl: './conciliar.html',
   styleUrl: './conciliar.css',
 })
@@ -44,18 +36,29 @@ export class Conciliar {
       .slice(0, 500);
   });
 
-  readonly barrasEstado = computed(() => {
-    const counts: Record<string, number> = {};
-    this.appState.groups().forEach((g) => { counts[g.estado] = (counts[g.estado] || 0) + 1; });
-    const max = Math.max(1, ...Object.values(counts));
-    return Object.entries(counts).map(([estado, n]) => ({ estado, n, pct: (n / max) * 100, color: ESTADO_COLORES[estado] || '#999' }));
+  /** Paciente (documento de identidad) con su detalle por servicio desplegado. */
+  readonly abierto = signal('');
+
+  /** Servicios conciliados por paciente, agrupados por DOCUMENTO DE IDENTIDAD (nunca por nombre). */
+  readonly serviciosPorPaciente = computed(() => {
+    const m = new Map<string, ServicioRow[]>();
+    for (const s of this.appState.resultado()?.servicios || []) {
+      if (!m.has(s.id)) m.set(s.id, []);
+      m.get(s.id)!.push(s);
+    }
+    return m;
   });
 
-  readonly barrasCategoria = computed(() => {
-    const cats = this.appState.resultado()?.cats || ({} as Record<string, { count: number; valor: number }>);
-    const max = Math.max(1, ...Object.values(cats).map((c) => c.count));
-    return Object.entries(cats).map(([cat, v]) => ({ cat, n: v.count, valor: v.valor, pct: (v.count / max) * 100, color: CAT_COLORES[cat] || '#999' }));
-  });
+  serviciosDe(id: string): ServicioRow[] { return this.serviciosPorPaciente().get(id) || []; }
+
+  /** Control: lo contado por servicio debe sumar lo mismo que el grupo del paciente. */
+  cuadraConServicios(g: GrupoConciliacion): boolean {
+    const ss = this.serviciosDe(g.id);
+    const t = ss.reduce((a, s) => ({ ag: a.ag + s.ag, cj: a.cj + s.cj, co: a.co + s.co }), { ag: 0, cj: 0, co: 0 });
+    return t.ag === g.countAgenda && t.cj === g.countCaja && t.co === g.countConsumo;
+  }
+
+  alternar(id: string) { this.abierto.set(this.abierto() === id ? '' : id); }
 
   conciliar() {
     this.orquestador.ejecutar();

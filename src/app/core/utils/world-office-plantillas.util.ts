@@ -16,6 +16,7 @@
  */
 import ExcelJS from 'exceljs';
 import { FacturaWO, ReciboWO, WO_CONFIG } from '../models/world-office.model';
+import { conservarFirmaPlantilla } from './plantilla-firma.util';
 
 export const RUTA_PLANTILLA_FACTURA = 'plantillas-wo/PlantillaFacturaVentaDatosMonedaLocal.xlsx';
 export const RUTA_PLANTILLA_RECIBO = 'plantillas-wo/PlantillaRecibosDeCaja_1.xlsx';
@@ -93,7 +94,7 @@ export async function llenarPlantillaFactura(plantilla: ArrayBuffer, facturas: F
     f.pagos.forEach((pg) => escribir(pag, [f.empresa, f.prefijoWO, f.numero, pg.forma, pg.valor]));
   }
   restaurarLista(pag, `D2:D${Math.max(101, pag.rowCount + 100)}`, 'Listas!$A$2:$A$80');
-  return (await wb.xlsx.writeBuffer()) as ArrayBuffer;
+  return conservarFirmaPlantilla(plantilla, (await wb.xlsx.writeBuffer()) as ArrayBuffer);
 }
 
 /** Llena PlantillaRecibosDeCaja_1.xlsx con los recibos preparados (anticipos y abonos a deuda). */
@@ -114,5 +115,5 @@ export async function llenarPlantillaRecibo(plantilla: ArrayBuffer, recibos: Rec
     }
   }
   restaurarLista(det, 'P2:P1048576', 'Listas!$A$2:$A$9');
-  return (await wb.xlsx.writeBuffer()) as ArrayBuffer;
+  return conservarFirmaPlantilla(plantilla, (await wb.xlsx.writeBuffer()) as ArrayBuffer);
 }

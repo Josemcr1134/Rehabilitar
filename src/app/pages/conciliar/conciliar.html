@@ -23,27 +23,8 @@
 </section>
 
 @if (appState.conciliado()) {
-  <section class="card">
-    <h2>6. Distribución por estado de conciliación</h2>
-    @for (b of barrasEstado(); track b.estado) {
-      <div class="mini-bar-row">
-        <div class="lab">{{ b.estado }}</div>
-        <div class="mini-bar-track"><div class="mini-bar-fill" [style.width.%]="b.pct" [style.background]="b.color"></div></div>
-        <div class="mini-bar-num">{{ b.n }}</div>
-      </div>
-    }
-  </section>
-
-  <section class="card">
-    <h2>7. Movimientos de CAJA por categoría</h2>
-    @for (b of barrasCategoria(); track b.cat) {
-      <div class="mini-bar-row">
-        <div class="lab">{{ b.cat }}</div>
-        <div class="mini-bar-track"><div class="mini-bar-fill" [style.width.%]="b.pct" [style.background]="b.color"></div></div>
-        <div class="mini-bar-num">{{ b.n }} · ${{ b.valor | number: '1.0-0' : 'es-CO' }}</div>
-      </div>
-    }
-  </section>
+  <!-- «5. Resumen ejecutivo»: el mismo de la pestaña Resumen, visible apenas se concilia. -->
+  <app-resumen />
 
   <section class="card">
     <h2>9. Conciliación por paciente</h2>
@@ -61,7 +42,7 @@
         <thead>
           <tr>
             <th>ID</th><th>Fecha</th><th>Paciente</th><th>AG</th><th>CJ</th><th>CO</th><th>Estado</th>
-            <th>EPS ok</th><th>Prof ok</th><th>Serv ok</th><th>Auth ok</th><th>Observación</th>
+            <th>EPS ok</th><th>Prof ok</th><th>Serv ok</th><th>Auth ok</th><th>Observación</th><th>Servicios</th>
           </tr>
         </thead>
         <tbody>
@@ -79,7 +60,36 @@
               <td>{{ ok(g, 'Referencia / Servicio') || '—' }}</td>
               <td>{{ ok(g, 'N° Autorización') || '—' }}</td>
               <td>{{ g.observacion }}</td>
+              <td>
+                <button class="btn-outline btn-small" (click)="alternar(g.id)">
+                  {{ abierto() === g.id ? 'Ocultar' : 'Ver' }} ({{ serviciosDe(g.id).length }})
+                </button>
+              </td>
             </tr>
+            @if (abierto() === g.id) {
+              <tr>
+                <td colspan="13" style="padding:6px 10px 12px 28px;background:#f7fafd;">
+                  <strong>Conciliación por servicio de {{ g.nombre }} ({{ g.id }})</strong>
+                  <table style="margin-top:6px;">
+                    <thead><tr><th>Servicio</th><th>AG</th><th>CJ</th><th>CO</th><th>Estado</th><th>Validación</th></tr></thead>
+                    <tbody>
+                      @for (s of serviciosDe(g.id); track s.servicio) {
+                        <tr>
+                          <td style="text-align:left">{{ s.servicio || '(sin texto de servicio)' }}</td>
+                          <td>{{ s.ag }}</td><td>{{ s.cj }}</td><td>{{ s.co }}</td>
+                          <td><span class="tag" [class]="tagClase(s.estado)">{{ s.estado }}</span></td>
+                          <td [class.cell-ok]="s.aprobado">{{ s.notaAprobado || '—' }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                  <p class="hint" [class.error]="!cuadraConServicios(g)">
+                    {{ cuadraConServicios(g) ? 'Los servicios suman lo mismo que el paciente (AG / CJ / CO).' : 'Ojo: la suma por servicio no coincide con los totales del paciente.' }}
+                    Se agrupa por documento de identidad, no por nombre.
+                  </p>
+                </td>
+              </tr>
+            }
           }
         </tbody>
       </table>

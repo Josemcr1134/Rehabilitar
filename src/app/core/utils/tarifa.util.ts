@@ -8,6 +8,8 @@
  *   1) "... TAR 31.500 PAC 20.300 ENT 11.200"  -> convenio con copago
  *   2) "... PART 32.000"                        -> particular: el paciente paga todo
  *   3) "... PACIENTE 25.000 ENTIDAD 0"           -> PROBIENESTAR y similares
+ *   4) "... TAR 30.000 PACIENTE 19.000 ENTIDAD 11.000" -> TAR con paciente/entidad escritos completos
+ *   5) "... CORTESIA"                            -> servicio sin costo (0 / 0 / 0)
  *
  * El \b inicial en los regex es imprescindible: sin él, "PROBIENESTAR 2026" hace
  * match con "TAR" y captura el AÑO como si fuera la tarifa.
@@ -38,8 +40,10 @@ export function extraerTarifa(texto: unknown): Tarifa {
     return m ? parseMoneda(m[1]) : null;
   };
   const tar = g(/\bTAR\.?\s*[:-]?\s*([\d.,]+)/);
-  const pac = g(/\bPAC\.?\s*[:-]?\s*([\d.,]+)/);
-  const ent = g(/\bENT\.?\s*[:-]?\s*([\d.,]+)/);
+  // «TAR 30.000 PACIENTE 19.000 ENTIDAD 11.000»: con TAR, el paciente y la entidad también pueden
+  // venir escritos completos. Antes se leía solo la TAR y PAC/ENT quedaban en 0 (TAR ≠ PAC + ENT).
+  const pac = g(/\bPAC\.?\s*[:-]?\s*([\d.,]+)/) ?? (tar !== null ? g(/\bPACIENTE\.?\s*[:-]?\s*([\d.,]+)/) : null);
+  const ent = g(/\bENT\.?\s*[:-]?\s*([\d.,]+)/) ?? (tar !== null ? g(/\bENTIDAD\.?\s*[:-]?\s*([\d.,]+)/) : null);
   if (tar !== null || pac !== null || ent !== null) {
     return {
       tar: tar !== null ? tar : (pac || 0) + (ent || 0),
@@ -60,6 +64,10 @@ export function extraerTarifa(texto: unknown): Tarifa {
   const part = g(/\bPART(?:ICULAR)?\.?\s*[:-]?\s*([\d.,]+)/);
   if (part !== null) {
     return { tar: part, pac: part, ent: 0, copagoExplicito: false, detectado: true, tipo: 'PARTICULAR', regla: 'PART' };
+  }
+  // Cortesía: el servicio se presta sin costo (tarifa 0), igual que en el consolidado de agendas.
+  if (/\bCORTESIA\b/.test(t)) {
+    return { tar: 0, pac: 0, ent: 0, copagoExplicito: false, detectado: true, tipo: 'CORTESIA', regla: 'CORTESIA' };
   }
   return { ...VACIO, regla: 'NO RECONOCIDO' };
 }

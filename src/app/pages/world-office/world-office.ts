@@ -2,9 +2,10 @@ import { JsonPipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AppStateService } from '../../core/services/app-state.service';
-import { operacionDe, WorldOfficeService } from '../../core/services/world-office.service';
+import { fechaLocal, operacionDe, WorldOfficeService } from '../../core/services/world-office.service';
 import { CENTROS, FacturaWO, ReciboWO, TABLA_A, WO_CONFIG } from '../../core/models/world-office.model';
 import { fmtCOP, key, prepararDocumentos } from '../../core/utils/world-office.util';
+import { TerceroNuevo, TIPOS_IDENTIFICACION, validarTercero } from '../../core/utils/world-office-terceros.util';
 
 type DocumentoWO = FacturaWO | ReciboWO;
 
@@ -30,10 +31,12 @@ export class WorldOffice {
   /** true si la clave se recordó de esta misma pestaña (sessionStorage). */
   readonly sesionRecordada = signal(false);
   readonly operacionDe = operacionDe;
+  readonly fechaLocal = fechaLocal;
 
   readonly conservarNumero = signal(true);
   readonly contabilizar = signal(true);
   readonly verificarDuplicados = signal(true);
+  readonly basico = signal(false);
   readonly verExcluidos = signal(false);
 
   readonly mensaje = signal('');
@@ -47,6 +50,13 @@ export class WorldOffice {
   readonly estadoServidor = this.wo.estadoServidor;
   readonly historial = this.wo.historial;
   readonly historialPersistente = this.wo.historialPersistente;
+  readonly pacientesNuevos = this.wo.pacientesNuevos;
+  readonly ciudadesWO = this.wo.ciudadesWO;
+  readonly archivosCabecera = this.wo.archivosCabecera;
+  readonly contactosCabecera = this.wo.contactosCabecera;
+  readonly tiposIdentificacion = TIPOS_IDENTIFICACION;
+  /** Ciudad que se copia a todos los pacientes nuevos con «Aplicar a todos». */
+  ciudadTodos = '';
 
   readonly cajaInfo = computed(() => {
     const caja = this.caja();
@@ -101,6 +111,7 @@ export class WorldOffice {
   preparar() {
     const p = prepararDocumentos(this.caja() || []);
     this.wo.prep.set(p);
+    this.wo.pacientesNuevos.set(null);
     this.deseleccionados.set(new Set());
     this.mensaje.set(`Listo: ${p.facturas.length} facturas y ${p.recibos.length} recibos. ${this.cat() ? 'Puedes simular.' : 'Conecta con World Office para simular o enviar.'}`);
   }
@@ -118,9 +129,78 @@ export class WorldOffice {
   cerrarSesionWO() {
     this.wo.cerrarSesion();
     this.clave = '';
+    this.ciudadTodos = '';
     this.sesionRecordada.set(false);
     this.deseleccionados.set(new Set());
     this.mensaje.set('Sesión de World Office cerrada en este navegador.');
+  }
+
+  // ---------- Pacientes nuevos (terceros) ----------
+  async revisarPacientes(): Promise<TerceroNuevo[] | null> {
+    if (!this.cat()) { this.mensaje.set('Primero conecta con World Office.'); return null; }
+    const docs = this.docsSeleccionados();
+    if (!docs.length) { this.mensaje.set('No hay documentos seleccionados.'); return null; }
+    this.bloqueado.set(true);
+    try {
+      const nuevos = await this.wo.detectarPacientesNuevos(docs, (i, tot) => this.mensaje.set(`Buscando pacientes en World Office ${i} de ${tot}…`));
+      this.mensaje.set(nuevos.length
+        ? `${nuevos.length} paciente(s) nuevo(s) no existen en World Office: completa sus datos abajo y descarga la plantilla de terceros.`
+        : 'Todos los pacientes ya existen en World Office.');
+      return nuevos;
+    } catch (e) {
+      this.mensaje.set('No se pudieron revisar los pacientes: ' + (e instanceof Error ? e.message : String(e)));
+      return null;
+    } finally {
+      this.bloqueado.set(false);
+    }
+  }
+
+  /** Carga uno o varios «Reporte Cabecera Facturación» de Medifolios (dirección, teléfono y correo de los pacientes). */
+  async onCabecera(ev: Event) {
+    const input = ev.target as HTMLInputElement;
+    const archivos = Array.from(input.files || []);
+    input.value = '';
+    for (const f of archivos) {
+      try {
+        const info = await this.wo.cargarCabecera(f);
+        this.mensaje.set(`Cabecera «${info.nombre}» cargada: ${info.pacientes} paciente(s) con datos de contacto`
+          + (info.periodo ? ` (periodo ${info.periodo})` : '') + '.');
+      } catch (e) {
+        this.mensaje.set(`No se pudo leer «${f.name}»: ` + (e instanceof Error ? e.message : String(e)));
+        return;
+      }
+    }
+  }
+
+  limpiarCabecera() {
+    this.wo.limpiarCabecera();
+    this.mensaje.set('Se quitaron los datos de la cabecera de facturación (lo ya copiado a los pacientes nuevos se conserva).');
+  }
+
+  erroresPaciente(t: TerceroNuevo): string[] { return validarTercero(t, this.ciudadesWO()); }
+
+  pacientesCompletos(): TerceroNuevo[] { return (this.pacientesNuevos() || []).filter((t) => !this.erroresPaciente(t).length); }
+
+  aplicarCiudadATodos() {
+    const c = this.ciudadTodos.trim();
+    if (!c) return;
+    (this.pacientesNuevos() || []).forEach((t) => { t.ciudad = c; });
+    this.pacientesNuevos.set([...(this.pacientesNuevos() || [])]);
+  }
+
+  async descargarPlantillaTerceros() {
+    const todos = this.pacientesNuevos() || [];
+    const listos = this.pacientesCompletos();
+    if (!listos.length) { this.mensaje.set('Ningún paciente nuevo tiene todos los datos obligatorios todavía.'); return; }
+    try {
+      await this.wo.descargarPlantillaTerceros(listos);
+      const faltan = todos.length - listos.length;
+      this.mensaje.set(`Plantilla de terceros descargada con ${listos.length} paciente(s).`
+        + (faltan ? ` ${faltan} quedaron por fuera porque les faltan datos.` : '')
+        + ' Impórtala en World Office y luego vuelve a «Revisar pacientes nuevos».');
+    } catch (e) {
+      this.mensaje.set('No se pudo generar la plantilla de terceros: ' + (e instanceof Error ? e.message : String(e)));
+    }
   }
 
   seleccionado(doc: string): boolean { return !this.deseleccionados().has(doc); }
@@ -140,28 +220,36 @@ export class WorldOffice {
   async enviarReal() {
     const docs = this.docsSeleccionados();
     if (!docs.length) { this.mensaje.set('No hay documentos seleccionados.'); return; }
+    // Antes de enviar: ¿hay pacientes que todavía no existen en World Office?
+    const nuevos = await this.revisarPacientes();
+    if (nuevos === null) return;
     const total = docs.reduce((s, d) => s + d.valor, 0);
+    const docsNuevos = nuevos.reduce((n, t) => n + t.documentos.length, 0);
     const txt = `Se van a CREAR en World Office ${docs.filter((d) => d.tipo === 'FV').length} factura(s) y ${docs.filter((d) => d.tipo === 'RC').length} recibo(s) por ${fmtCOP(total)}.\n\n`
+      + (nuevos.length ? `OJO: ${nuevos.length} paciente(s) nuevo(s) no existen en World Office; sus ${docsNuevos} documento(s) NO se van a crear hasta que los importes con la plantilla de terceros.\n\n` : '')
       + (this.contabilizar() ? 'Las facturas se contabilizan al crearlas.\n' : 'Las facturas quedan SIN contabilizar.\n')
       + 'Esta acción modifica directamente la información contable. ¿Continuar?';
     if (!confirm(txt)) return;
-    await this.enviarInterno(false);
+    await this.enviarInterno(false, true);
   }
 
-  private async enviarInterno(simular: boolean) {
+  private async enviarInterno(simular: boolean, pacientesRevisados = false) {
     if (!this.prep()) { this.mensaje.set('Primero prepara los documentos.'); return; }
     if (!this.cat()) { this.mensaje.set('Primero conecta con World Office.'); return; }
     const docs = this.docsSeleccionados();
     if (!docs.length) { this.mensaje.set('No hay documentos seleccionados.'); return; }
+    if (!pacientesRevisados && (await this.revisarPacientes()) === null) return;
+    const nuevos = this.pacientesNuevos()?.length || 0;
     this.bloqueado.set(true);
     this.wo.log.set([]);
-    const opciones = { conservarNumero: this.conservarNumero(), contabilizar: this.contabilizar(), verificarDuplicados: this.verificarDuplicados() };
+    const opciones = { conservarNumero: this.conservarNumero(), contabilizar: this.contabilizar(), verificarDuplicados: this.verificarDuplicados(), basico: this.basico() };
     const { ok, total, detenido } = await this.wo.enviar(simular, docs, opciones, (i, tot, doc) => {
       this.mensaje.set(`${simular ? 'Simulando' : 'Enviando'} ${i} de ${tot}: ${doc}…`);
     });
     this.bloqueado.set(false);
     if (detenido) { this.mensaje.set(detenido); return; }
-    this.mensaje.set(`${simular ? 'Simulación terminada' : 'Envío terminado'}: ${ok} de ${total} ${simular ? 'listos' : 'creados'}. Revisa la bitácora.`);
+    this.mensaje.set(`${simular ? 'Simulación terminada' : 'Envío terminado'}: ${ok} de ${total} ${simular ? 'listos' : 'creados'}. Revisa la bitácora.`
+      + (nuevos ? ` Hay ${nuevos} paciente(s) nuevo(s): créalos con la plantilla de terceros (sección «Pacientes nuevos»).` : ''));
   }
 
   async descargarPlantillas() {

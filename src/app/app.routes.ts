@@ -26,6 +26,7 @@ export const routes: Routes = [
   { path: 'tarifas-referencia', loadComponent: () => import('./pages/tarifas-referencia/tarifas-referencia').then((m) => m.TarifasReferencia), title: 'Tarifas por referencia · Rehabilitar', canActivate: [authGuard] },
   { path: 'detalle-inconsistencias', loadComponent: () => import('./pages/detalle-inconsistencias/detalle-inconsistencias').then((m) => m.DetalleInconsistencias), title: 'Detalle inconsistencias · Rehabilitar', canActivate: [authGuard] },
   { path: 'world-office', loadComponent: () => import('./pages/world-office/world-office').then((m) => m.WorldOffice), title: 'World Office · Rehabilitar', canActivate: [authGuard] },
+  { path: 'notas-contables', loadComponent: () => import('./pages/notas-contables/notas-contables').then((m) => m.NotasContables), title: 'Notas contables · Rehabilitar', canActivate: [authGuard] },
   { path: 'exportar', loadComponent: () => import('./pages/exportar/exportar').then((m) => m.Exportar), title: 'Exportar · Rehabilitar', canActivate: [authGuard] },
   { path: '**', redirectTo: 'conexion-api' },
 ];

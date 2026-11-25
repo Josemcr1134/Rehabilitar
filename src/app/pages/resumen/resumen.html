@@ -19,17 +19,19 @@
       <app-kpi-card [valor]="k()!.inconsistencias" etiqueta="Inconsistencias" [estado]="k()!.inconsistencias ? 'bad' : 'ok'" />
     </div>
 
-    <div class="subtitulo">Financiero (COP)</div>
+    <div class="subtitulo">Financiero (reporte de caja)</div>
     <div class="kpi-grid">
-      <app-kpi-card [valor]="fmt(P()!.recaudoAgenda)" etiqueta="Recaudo de agenda" estado="ok" />
-      <app-kpi-card [valor]="fmt(P()!.recaudoReal)" etiqueta="Recaudo real (caja)" estado="ok" />
-      <app-kpi-card [valor]="fmt(O()!.totalCaja)" etiqueta="Total movido en caja" />
-      <app-kpi-card [valor]="fmt(P()!.pagoDelDia)" etiqueta="Pago del día (paciente)" />
-      <app-kpi-card [valor]="fmt(P()!.anticipoDescuento)" etiqueta="Anticipo descuento" />
-      <app-kpi-card [valor]="fmt(P()!.credito)" etiqueta="Crédito deuda" />
+      <app-kpi-card [valor]="fmt(P()!.totalAsumePaciente)" etiqueta="Total asume paciente" estado="ok" />
+      <app-kpi-card [valor]="fmt(O()!.totalCaja)" etiqueta="Total reporte de caja" />
+      <app-kpi-card [valor]="fmt(P()!.pagoDelDia)" etiqueta="Pago del día (Asume paciente)" />
+      <app-kpi-card [valor]="fmt(P()!.anticipoDescuento)" etiqueta="Anticipo descuento (Asume paciente)" />
+      <app-kpi-card [valor]="fmt(P()!.credito)" etiqueta="Crédito deuda (Asume paciente)" />
       <app-kpi-card [valor]="cuadraTarifa() ? 'CUADRA' : 'NO CUADRA'" etiqueta="TAR = PAC + ENT" [estado]="cuadraTarifa() ? 'ok' : 'bad'" />
       <app-kpi-card [valor]="O()!.agenda.detectadas + ' / ' + O()!.agenda.sesiones" etiqueta="Citas con tarifa detectada" />
     </div>
+    @if (O()!.citasNoCumplidas) {
+      <p class="hint">{{ O()!.citasNoCumplidas }} cita(s) del reporte de agenda no están CUMPLIDAS y no suman en la venta ni en el asume paciente.</p>
+    }
 
     <div class="subtitulo">Desglose tarifario detectado</div>
     <table class="fin-table">
@@ -38,8 +40,8 @@
         @for (f of filasDesglose(); track f.lab) {
           <tr>
             <td [style.font-weight]="f.negrita ? 700 : 400" [style.padding-left.px]="f.negrita ? 0 : 18">{{ f.lab }}</td>
-            <td [style.font-weight]="f.negrita ? 700 : 400">{{ f.esNumero ? f.val : fmt(f.val) }}</td>
-            <td class="hint">{{ f.nota }}</td>
+            <td [style.font-weight]="f.negrita ? 700 : 400">{{ f.texto ?? (f.esNumero ? f.val : fmt(f.val)) }}</td>
+            <td class="hint" [class.cell-warn]="f.alerta">{{ f.nota }}</td>
           </tr>
         }
       </tbody>
@@ -52,13 +54,74 @@
         @for (f of O()!.formasPago; track f.forma) {
           <tr><td>{{ f.forma }}</td><td>{{ fmt(f.valor) }}</td></tr>
         }
-        <tr><td style="font-weight:700;">Total general</td><td style="font-weight:700;">{{ fmt(O()!.totalCaja) }}</td></tr>
+        <tr><td style="font-weight:700;">Total reporte de caja</td><td style="font-weight:700;">{{ fmt(O()!.totalCaja) }}</td></tr>
         @if (O()!.conNitMov) {
           <tr><td colspan="2" class="hint">
-            El pago del día incluye {{ O()!.conNitMov }} movimiento(s) por {{ fmt(O()!.conNit) }} de terceros con NIT (entidades pagando en caja).
+            {{ O()!.conNitMov }} movimiento(s) por {{ fmt(O()!.conNit) }} en facturas R/COPG/COPL/LA son de terceros con NIT (entidades pagando en caja): no cuentan como asume paciente.
           </td></tr>
         }
       </tbody>
     </table>
+
+    <div class="subtitulo">De dónde sale el total del reporte de caja</div>
+    <table class="fin-table">
+      <thead><tr><th>Concepto</th><th>COP</th></tr></thead>
+      <tbody>
+        <tr><td>Total asume paciente (pago del día + anticipo descuento + crédito deuda)</td><td>{{ fmt(P()!.totalAsumePaciente) }}</td></tr>
+        <tr><td>Abonos a deuda (RCR-A, RCL-A)</td><td>{{ fmt(O()!.fueraAsumePaciente.abonosDeuda) }}</td></tr>
+        <tr><td>Anticipos recibidos (ANTR, ANTL)</td><td>{{ fmt(O()!.fueraAsumePaciente.anticiposRecibidos) }}</td></tr>
+        <tr><td>Pagos y cartera de entidades (NIT, RCE, RCEL)</td><td>{{ fmt(O()!.fueraAsumePaciente.entidades) }}</td></tr>
+        <tr><td>Documentos anulados</td><td>{{ fmt(totalAnulado()) }}</td></tr>
+        @if (O()!.fueraAsumePaciente.otros) {
+          <tr><td>Otros movimientos</td><td>{{ fmt(O()!.fueraAsumePaciente.otros) }}</td></tr>
+        }
+        <tr><td style="font-weight:700;">Total reporte de caja</td><td style="font-weight:700;">{{ fmt(O()!.totalCaja) }}</td></tr>
+        <tr><td colspan="2" [class.cell-ok]="cuadraReporte()" [class.cell-bad]="!cuadraReporte()">
+          {{ cuadraReporte() ? 'Cuadra: la suma de los conceptos es igual al total del reporte.' : 'No cuadra: revisa el reporte de caja.' }}
+        </td></tr>
+      </tbody>
+    </table>
+
+    <div class="subtitulo">Registros anulados ({{ O()!.anulados.length }})</div>
+    @if (!O()!.anulados.length) {
+      <p class="hint">El reporte de caja no trae documentos anulados.</p>
+    } @else {
+      <p class="hint">
+        Documentos con ESTADO = A en el reporte de caja. Se muestran con su valor original, pero
+        <strong>no suman</strong> en pago del día, anticipo, crédito ni total asume paciente.
+        Sí están dentro del «Total reporte de caja», porque así los suma el reporte.
+      </p>
+      <table class="fin-table">
+        <thead><tr><th>Documento</th><th>Fecha</th><th>Fecha registro</th><th>Fecha anulación</th><th>Motivo</th><th>Paciente / tercero</th><th>Forma de pago</th><th>Valor</th></tr></thead>
+        <tbody>
+          @for (a of O()!.anulados; track $index) {
+            <tr>
+              <td>{{ a.documento }}</td><td style="white-space:nowrap">{{ a.fecha || '—' }}</td>
+              <td style="white-space:nowrap">{{ a.fechaRegistro || '—' }}</td>
+              @if (anulacion(a.documento); as an) {
+                <td style="white-space:nowrap">{{ an.fechaAnulacion }}</td>
+                <td style="text-align:left">{{ an.concepto || '—' }}@if (an.quienAnula) { <small> · {{ an.quienAnula }}</small> }</td>
+              } @else {
+                <td>—</td><td>—</td>
+              }
+              <td style="text-align:left">{{ a.nombre || '—' }}@if (a.id) { <small> · {{ a.id }}</small> }</td>
+              <td>{{ a.formaPago || '—' }}</td><td>{{ fmt(a.valor) }}</td>
+            </tr>
+          }
+          <tr><td colspan="7" style="font-weight:700;">Total anulado (no suma)</td><td style="font-weight:700;">{{ fmt(totalAnulado()) }}</td></tr>
+        </tbody>
+      </table>
+      <div class="filters" style="margin-top:6px;">
+        <span class="hint" style="margin:0;">
+          @if (wo.anulacionesCabecera().size) {
+            Fecha y motivo de anulación tomados de la cabecera de facturación ({{ wo.anulacionesCabecera().size }} anulaciones cargadas).
+          } @else {
+            El reporte de caja no trae la fecha de anulación. Sube la «Cabecera de facturación» del mismo periodo para verla:
+          }
+        </span>
+        <input type="file" accept=".xlsx" multiple style="max-width:300px;" (change)="onCabecera($event)" />
+      </div>
+      @if (mensajeCabecera()) { <p class="hint">{{ mensajeCabecera() }}</p> }
+    }
   </section>
 }

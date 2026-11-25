@@ -1,0 +1,9 @@
+.tabs-origen { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.numeros { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.numero { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; text-transform: none; font-size: 12px; }
+.numero input[type='checkbox'] { width: auto; }
+.numero input[type='number'] { max-width: 110px; }
+.rango { display: flex; align-items: center; gap: 6px; margin: 0; text-transform: none; font-size: 12px; }
+.rango input { max-width: 160px; }
+.mensaje { font-weight: 600; }
+.detalle { width: 100%; font-size: 11px; }

@@ -138,9 +138,15 @@ async function llamarWO(metodo, ruta, cuerpo){
   let json = null; try{ json = JSON.parse(txt); }catch(e){}
   return {status: r.status, ok: r.ok, json, texto: json ? undefined : txt.slice(0, 500)};
 }
+/* World Office suele responder un código corto en userMessage («ERROR: 003») y el motivo real en
+   developerMessage, message, errors o data: se juntan todos para que la bitácora diga qué pasó. */
 function mensajeWO(r){
   const j = r.json || {};
-  return j.userMessage || j.detail || j.title || (j.developerMessage && JSON.stringify(j.developerMessage)) || r.texto || ('HTTP ' + r.status);
+  const txt = (v) => v == null || v === '' ? '' : typeof v === 'string' ? v : JSON.stringify(v);
+  const partes = [j.userMessage, j.detail, j.title, j.message, j.developerMessage, j.errors, j.errores, j.error,
+    typeof j.data === 'string' || Array.isArray(j.data) ? j.data : null].map(txt).filter(Boolean);
+  const unicas = [...new Set(partes)];
+  return (unicas.join(' · ') || r.texto || ('HTTP ' + r.status)).slice(0, 1500);
 }
 
 /* --------------------------------------------------------------------------- */
@@ -205,6 +211,11 @@ async function handler(req, res){
     }
     let r;
     try{ r = await llamarWO(metodo, ruta, body.cuerpo); }
+    catch(e){
+      /* Se envió pero World Office no respondió (conexión cortada o tiempo agotado): el documento
+         PUDO quedar creado. 504 = «pendiente de confirmar»; el navegador no lo marca como error simple. */
+      return responder(res, 504, {error: 'Sin respuesta de World Office (' + e.message + '). Puede que el documento sí se haya creado: revísalo antes de reintentar.', sinConfirmacion: true});
+    }
     finally{ if(esCreacion) await liberar(clave); }
 
     const data = (r.json && r.json.data) || {};

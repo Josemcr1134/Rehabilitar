@@ -63,8 +63,10 @@ describe('Plantillas oficiales de World Office', () => {
     const deuda = p.recibos[1];
     expect(deuda.abonaA).toBe('FV R 90');
     expect(deuda.envioAPI).toBe(false);
-    expect(deuda.concepto).toBe('PAGO DEUDA RCR-A-12');
-    expect(deuda.avisos.join(' ')).toMatch(/más de 4 caracteres/);
+    expect(deuda.concepto).toBe('PAGO DEUDA RCRA-12');
+    expect(p.recibos[0].avisos.join(' ')).not.toMatch(/forma de pago contable/);
+    expect(deuda.prefijoWO).toBe('RCRA');
+    expect(deuda.avisos.join(' ')).not.toMatch(/más de 4 caracteres/);
     expect(p.controles.every((c) => c.ok)).toBe(true);
   });
 
@@ -87,7 +89,7 @@ describe('Plantillas oficiales de World Office', () => {
     expect(enc.getCell('D2').numFmt).toBe('dd/mm/yyyy');
 
     const mov = filas(wb.getWorksheet('Movimientos de Inventarios')!);
-    expect(mov[0].slice(3, 12)).toEqual(['01', 'principal', 'und', 1, 0, 32000, 0, 'PAGO DEL DÍA', 'Particulares']);
+    expect(mov[0].slice(3, 12)).toEqual(['01', 'Principal', 'und', 1, 0, 32000, 0, 'PAGO DEL DÍA', 'Particulares']);
     expect(mov[1][3]).toBe('05');
     expect(mov[1][11]).toBe('Sura Póliza');
 
@@ -103,7 +105,8 @@ describe('Plantillas oficiales de World Office', () => {
     expect(wb.worksheets.map((w) => w.name)).toEqual(['Encabezados', 'Detalles Contables', 'Listas']);
 
     const enc = filas(wb.getWorksheet('Encabezados')!);
-    expect(enc.map((r) => r[5])).toEqual(['ANTICIPO ANTR-5', 'PAGO DEUDA RCR-A-12']);
+    expect(enc.map((r) => r[5])).toEqual(['ANTICIPO ANTR-5', 'PAGO DEUDA RCRA-12']);
+    expect(enc.map((r) => r[1])).toEqual(['ANTR', 'RCRA']);
     expect(enc[0][4]).toBe(444);
 
     const det = filas(wb.getWorksheet('Detalles Contables')!);
@@ -112,6 +115,10 @@ describe('Plantillas oficiales de World Office', () => {
       [11200505, 80000, null], [28051501, null, 80000], [11200506, 19400, null], [13050501, null, 19400],
     ]);
     expect(det[3][8]).toBe('FV R 90');
+    // Débito al banco por transferencia: «Forma de Pago» = Transferencia (como la plantilla que World Office acepta).
+    expect(det[0][15]).toBe('Tarjeta de Crédito');
+    expect(det[2][15]).toBe('Transferencia');
+    expect(det[3][15] ?? null).toBeNull();
     const debitos = det.reduce((s, r) => s + Number(r[6] || 0), 0), creditos = det.reduce((s, r) => s + Number(r[7] || 0), 0);
     expect(debitos).toBe(creditos);
   });

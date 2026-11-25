@@ -37,6 +37,22 @@ export interface WoConfig {
    * que mientras esté en false esos recibos van SOLO en la plantilla Excel.
    */
   recibosDeudaPorAPI: boolean;
+  /**
+   * Valores fijos para crear pacientes nuevos con la plantilla oficial de terceros
+   * (public/plantillas-wo/PlantillaTerceros.xlsx). Los textos deben ser EXACTAMENTE
+   * los de la hoja oculta LISTAS de esa plantilla. `ciudadPorDefecto` vacío obliga
+   * a escribir la ciudad en pantalla.
+   */
+  terceros: {
+    tipoIdentificacionPersona: string;
+    tipoTercero: string;
+    tipoContribuyentePersona: string;
+    tipoContribuyenteEmpresa: string;
+    clasificacionImpuesto: string;
+    tipoDireccion: string;
+    nombreDireccion: string;
+    ciudadPorDefecto: string;
+  };
 }
 
 export const WO_CONFIG: WoConfig = {
@@ -50,9 +66,10 @@ export const WO_CONFIG: WoConfig = {
   prefijosFactura: ['R', 'COPG', 'COPL'],
   prefijosReciboAnticipo: ['ANTR', 'ANTL'],
   prefijosReciboDeuda: ['RCR-A', 'RCL-A'],
-  prefijoWO: {},
+  // En World Office los recibos de abono a deuda se llaman sin guion (confirmado por contabilidad, 2026-10-19).
+  prefijoWO: { 'RCR-A': 'RCRA', 'RCL-A': 'RCLA' },
   monedaCodigo: 'COP',
-  bodega: 'principal',
+  bodega: 'Principal',
   unidadMedida: 'und',
   formaPagoDetalle: 'XEfectivo ',
   conceptoReciboAnticipo: 'ANTICIPO',
@@ -66,11 +83,25 @@ export const WO_CONFIG: WoConfig = {
   },
   cuentaCreditoAnticipo: '28051501',
   cuentaCreditoDeuda: '13050501',
+  // «Forma de Pago» de la fila débito en la plantilla de recibos (lista oculta «Listas»:
+  // Bono, Cheque, Efectivo, Letra de Cambio, Pagaré, Tarjeta Débito, Tarjeta de Crédito, Transferencia).
+  // Transferencia: según la plantilla que contabilidad sí carga (2026-10-19). Tarjeta: en World Office la
+  // forma de pago «Tarjeta» (usada en FV y RC) pertenece al grupo «Tarjeta Crédito» (2026-10-19).
   formaPagoContable: {
-    EFECTIVO: 'Efectivo', TARJETA: null, 'TRANSFERENCIA A DAVIVIENDA': null,
-    TRANSFERENCIA_BANCOLOMBIA_REHABILITAR: null, TRANSFERENCIA_BANCOLOMBIA_LILIAN: null,
+    EFECTIVO: 'Efectivo', TARJETA: 'Tarjeta de Crédito', 'TRANSFERENCIA A DAVIVIENDA': 'Transferencia',
+    TRANSFERENCIA_BANCOLOMBIA_REHABILITAR: 'Transferencia', TRANSFERENCIA_BANCOLOMBIA_LILIAN: 'Transferencia',
   },
   recibosDeudaPorAPI: false,
+  terceros: {
+    tipoIdentificacionPersona: 'Cédula de ciudadanía',
+    tipoTercero: 'Cliente',
+    tipoContribuyentePersona: 'Persona Natural No Responsable del IVA',
+    tipoContribuyenteEmpresa: 'Persona Jurídica',
+    clasificacionImpuesto: 'Normal',
+    tipoDireccion: 'Casa',
+    nombreDireccion: 'Principal',
+    ciudadPorDefecto: '',
+  },
 };
 
 export interface ReglaTablaA { grupo: 'PAGO' | 'CREDITO' | 'ANTICIPO'; concepto: string; forma: string }
@@ -185,7 +216,8 @@ export interface EntidadCatalogo { id: number | string; [k: string]: unknown }
 
 export interface CatalogosWO {
   empresas: Record<string, EntidadCatalogo>;
-  prefijos: { FV: Record<string, EntidadCatalogo>; RC: Record<string, EntidadCatalogo> };
+  /** NC = notas de contabilidad (AP, APL, AE, AEL, APR, APLR…), usadas por la pestaña «Notas contables». */
+  prefijos: { FV: Record<string, EntidadCatalogo>; RC: Record<string, EntidadCatalogo>; NC: Record<string, EntidadCatalogo> };
   formasVenta: Record<string, EntidadCatalogo>;
   formasContables: Record<string, EntidadCatalogo>;
   monedas: Record<string, EntidadCatalogo>;
@@ -196,7 +228,7 @@ export interface CatalogosWO {
 
 export interface FilaBitacora {
   documento: string;
-  tipo: 'FV' | 'RC';
+  tipo: 'FV' | 'RC' | 'NC';
   valor: number;
   estado: string;
   idWO: string | number;
@@ -223,6 +255,11 @@ export interface RegistroHistorialWO {
 
 export interface OpcionesEnvio {
   conservarNumero: boolean;
+  /**
+   * Factura solo con los campos básicos del servicio crearDocumentoVenta (sin concepto de encabezado,
+   * prefijo/número externo ni valorTotal del renglón). Sirve para aislar el «ERROR: 003 · Error inesperado».
+   */
+  basico?: boolean;
   contabilizar: boolean;
   verificarDuplicados: boolean;
 }
