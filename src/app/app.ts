@@ -23,6 +23,7 @@ export class App {
     { ruta: 'tarifas-referencia', etiqueta: '12. Tarifas por referencia', requiereLogin: true },
     { ruta: 'detalle-inconsistencias', etiqueta: '13. Detalle inconsistencias', requiereLogin: true },
     { ruta: 'world-office', etiqueta: 'World Office', requiereLogin: true },
+    { ruta: 'notas-contables', etiqueta: 'Notas contables', requiereLogin: true },
     { ruta: 'exportar', etiqueta: '14. Exportar', requiereLogin: true },
   ];
 }

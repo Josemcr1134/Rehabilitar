@@ -36,6 +36,7 @@
     <button class="btn-primary btn-small" [disabled]="!puedeConectar()" (click)="conectar()">Conectar y leer catálogos</button>
     <button class="btn-outline btn-small" [disabled]="!puedePreparar()" (click)="preparar()">Preparar documentos</button>
     <button class="btn-outline btn-small" [disabled]="!puedeExcel()" (click)="descargarPlantillas()">⬇ Plantillas oficiales World Office</button>
+    <button class="btn-outline btn-small" [disabled]="!puedeApi()" (click)="revisarPacientes()">Revisar pacientes nuevos</button>
     <button class="btn-outline btn-small" [disabled]="!puedeApi()" (click)="simular()">Simular envío</button>
     <button class="btn-secondary btn-small" [disabled]="!puedeApi()" (click)="enviarReal()">Enviar a World Office</button>
     @if (cat() || sesionRecordada()) {
@@ -55,6 +56,10 @@
     <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:12px;">
       <input type="checkbox" style="width:auto;" [checked]="verificarDuplicados()" (change)="verificarDuplicados.set($any($event.target).checked)" />
       Verificar duplicados antes de enviar
+    </label>
+    <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:12px;">
+      <input type="checkbox" style="width:auto;" [checked]="basico()" (change)="basico.set($any($event.target).checked)" />
+      Facturas solo con los campos básicos (prueba del «ERROR: 003»)
     </label>
     <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:12px;">
       <input type="checkbox" style="width:auto;" [checked]="verExcluidos()" (change)="verExcluidos.set($any($event.target).checked)" />
@@ -102,6 +107,88 @@
         <p class="hint" style="color:var(--rojo)">No se pudieron leer: {{ cat()!.errores.join(' · ') }}</p>
       }
       <p class="hint">Clientes, vendedor, productos (01–08) y cuentas contables se buscan uno por uno al simular o enviar.</p>
+    }
+
+    <div class="subtitulo">Datos de contacto de los pacientes (cabecera de facturación)</div>
+    <p class="hint">
+      El reporte de caja no trae dirección, teléfono ni correo. Sube el «Reporte Cabecera Facturación» de Medifolios
+      (puedes subir varios periodos, p. ej. enero–junio y julio–hoy) y esos datos se llenan solos en los pacientes nuevos.
+      Se leen en este navegador y no se guardan. La cabecera no trae ciudad: esa se escoge abajo.
+    </p>
+    <div class="filters" style="margin:6px 0;">
+      <input type="file" accept=".xlsx" multiple style="max-width:340px;" [disabled]="bloqueado()" (change)="onCabecera($event)" />
+      @if (archivosCabecera().length) {
+        <span class="hint" style="margin:0;">
+          {{ contactosCabecera().size }} paciente(s) con datos ·
+          @for (a of archivosCabecera(); track $index) { {{ a.periodo || a.nombre }}@if (!$last) { · } }
+        </span>
+        <button class="btn-outline btn-small" (click)="limpiarCabecera()">Quitar cabecera</button>
+      }
+    </div>
+
+    @if (pacientesNuevos(); as nuevos) {
+      <div class="subtitulo">Pacientes nuevos (terceros que no existen en World Office)</div>
+      @if (!nuevos.length) {
+        <p class="hint">Todos los pacientes de los documentos seleccionados ya existen en World Office.</p>
+      } @else {
+        <p class="hint">
+          Estos {{ nuevos.length }} paciente(s) no existen en World Office y sus documentos no se pueden crear hasta importarlos.
+          Dirección, teléfono y correo salen de la cabecera de facturación (si la subiste); revisa y completa lo que falte,
+          escoge la ciudad, descarga la plantilla de terceros, impórtala en World Office (Terceros › Importar) y vuelve a dar «Revisar pacientes nuevos».
+        </p>
+        <div class="filters" style="margin:6px 0;">
+          <input type="text" style="max-width:260px;" [(ngModel)]="ciudadTodos" list="wo-ciudades" placeholder="Ciudad (de la lista de World Office)" />
+          <button class="btn-outline btn-small" [disabled]="!ciudadTodos.trim()" (click)="aplicarCiudadATodos()">Aplicar ciudad a todos</button>
+          <button class="btn-primary btn-small" [disabled]="bloqueado() || !pacientesCompletos().length" (click)="descargarPlantillaTerceros()">
+            ⬇ Plantilla de terceros ({{ pacientesCompletos().length }} de {{ nuevos.length }} completos)
+          </button>
+        </div>
+        <datalist id="wo-ciudades">
+          @for (c of ciudadesWO(); track c) { <option [value]="c"></option> }
+        </datalist>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Identificación</th><th>Nombre en caja</th><th>Tipo ID</th><th>Primer nombre / razón social</th><th>Segundo nombre</th>
+                <th>Primer apellido</th><th>Segundo apellido</th><th>Ciudad</th><th>Dirección</th><th>Teléfono</th><th>Email</th>
+                <th>Cabecera</th><th>Documentos</th><th>Falta</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (t of nuevos; track t.identificacion) {
+                <tr>
+                  <td>{{ t.identificacion }}</td>
+                  <td>{{ t.nombreCompleto }}</td>
+                  <td>
+                    <select style="min-width:170px" [(ngModel)]="t.tipoIdentificacion">
+                      @for (ti of tiposIdentificacion; track ti) { <option [value]="ti">{{ ti }}</option> }
+                    </select>
+                  </td>
+                  <td><input type="text" style="min-width:120px" [(ngModel)]="t.primerNombre" maxlength="50" /></td>
+                  <td><input type="text" style="min-width:110px" [(ngModel)]="t.segundoNombre" maxlength="50" /></td>
+                  <td><input type="text" style="min-width:110px" [(ngModel)]="t.primerApellido" maxlength="50" /></td>
+                  <td><input type="text" style="min-width:110px" [(ngModel)]="t.segundoApellido" maxlength="50" /></td>
+                  <td><input type="text" style="min-width:130px" [(ngModel)]="t.ciudad" list="wo-ciudades" /></td>
+                  <td><input type="text" style="min-width:170px" [(ngModel)]="t.direccion" maxlength="500" placeholder="CL 1 2 3" /></td>
+                  <td><input type="text" style="min-width:120px" inputmode="numeric" [(ngModel)]="t.telefono" placeholder="3001234567" /></td>
+                  <td><input type="text" style="min-width:200px" inputmode="email" [(ngModel)]="t.email" maxlength="60" placeholder="nombre@correo.com" /></td>
+                  <td [class.cell-ok]="t.enCabecera === true" [class.cell-warn]="t.enCabecera === false">
+                    {{ t.enCabecera === null ? '—' : t.enCabecera ? 'Encontrado' : 'No está' }}
+                  </td>
+                  <td>{{ t.documentos.join(', ') }}</td>
+                  @if (erroresPaciente(t); as err) {
+                    <td [class.cell-ok]="!err.length" [class.cell-warn]="err.length">
+                      {{ err.length ? err.join(' · ') : 'Completo' }}
+                      @if (t.avisos.length) { <br /><small>{{ t.avisos.join(' · ') }}</small> }
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
     }
 
     <div class="subtitulo">Documentos a enviar</div>
@@ -164,7 +251,7 @@
               <tr>
                 <td>{{ l.documento }}</td><td>{{ l.tipo }}</td><td style="text-align:right">{{ fmtCOP(l.valor) }}</td>
                 <td [class.cell-ok]="l.estado === 'CREADO' || l.estado === 'SIMULADO'"
-                    [class.cell-warn]="l.estado === 'YA EXISTE' || l.estado === 'YA ENVIADO' || l.estado === 'SOLO PLANTILLA' || l.estado === 'CREADO CON NOVEDAD'"
+                    [class.cell-warn]="l.estado === 'YA EXISTE' || l.estado === 'YA ENVIADO' || l.estado === 'SOLO PLANTILLA' || l.estado === 'CREADO CON NOVEDAD' || l.estado === 'PENDIENTE DE CONFIRMAR'"
                     [class.cell-bad]="l.estado === 'ERROR' || l.estado === 'FALTA EN WO'">{{ l.estado }}</td>
                 <td>{{ l.idWO }}</td><td>{{ l.numeroWO }}</td><td>{{ l.detalle }}</td>
                 <td>
@@ -189,7 +276,7 @@
         <tbody>
           @for (h of historial().slice(0, 50); track $index) {
             <tr>
-              <td style="white-space:nowrap">{{ h.fecha.replace('T', ' ').slice(0, 16) }}</td>
+              <td style="white-space:nowrap">{{ fechaLocal(h.fecha) }}</td>
               <td>{{ h.meta?.documento || '—' }}</td><td>{{ operacionDe(h.ruta) }}</td>
               <td [class.cell-ok]="h.ok" [class.cell-bad]="!h.ok">{{ h.ok ? 'OK' : 'ERROR' }}</td>
               <td>{{ h.idWO }}</td><td>{{ h.numeroWO }}</td><td>{{ h.mensaje }}</td>

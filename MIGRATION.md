@@ -75,6 +75,27 @@ Confirmar este cambio con el responsable del repositorio (CODEOWNERS) antes de f
   los documentos uno por uno. Los abonos a deuda (`RCR-A`/`RCL-A`) van solo por plantilla mientras
   `WO_CONFIG.recibosDeudaPorAPI = false` (requieren cruce de cartera).
 
+## Pacientes nuevos (terceros) antes de enviar a World Office (2026-10-15)
+
+- Cada cliente de los documentos (ID. TERCERO del reporte de caja) debe existir como tercero en World
+  Office. «Revisar pacientes nuevos» (y automáticamente antes de «Simular envío» / «Enviar») lo busca con
+  `GET /terceros/identificacion/{id}` a través de `/api/worldoffice` (ruta ya permitida en el backend).
+- Los que no existen se muestran en la sección «Pacientes nuevos». El reporte de caja solo trae
+  identificación y nombre: el nombre se divide en nombres/apellidos (con aviso si tiene 3 palabras) y la
+  persona completa en pantalla ciudad, dirección, teléfono y correo, que la plantilla exige.
+- «⬇ Plantilla de terceros» llena la plantilla OFICIAL `public/plantillas-wo/PlantillaTerceros.xlsx`
+  (hoja «Importación Terceros», encabezados en la fila 2) solo con los pacientes completos
+  (`core/utils/world-office-terceros.util.ts`). Se importa a mano en World Office; no se usa ningún
+  endpoint de creación de terceros.
+- Valores fijos (tipo de tercero, tipo de contribuyente, tipo de dirección, ciudad por defecto) en
+  `WO_CONFIG.terceros`; deben escribirse igual que en la hoja oculta LISTAS de la plantilla.
+- Mientras un paciente no exista, sus documentos salen como «FALTA EN WO» y no se crean.
+- Dirección, teléfono y correo se llenan solos subiendo uno o varios «Reporte Cabecera Facturación» de
+  Medifolios (`core/utils/cabecera-facturacion.util.ts`): columnas ID. TERCERO, DIR. TERCERO, TEL. TERCERO y
+  EMAIL TERCERO; por paciente se toma el dato más reciente no vacío. Solo llena campos vacíos. Son datos
+  personales: se leen en el navegador, viven en memoria y se borran con «Quitar cabecera» o al cerrar sesión de
+  World Office. La cabecera no trae ciudad.
+
 ## Arquitectura
 
 ```
@@ -152,8 +173,8 @@ para no migrar funcionalidad fantasma.
    aquí reproduce la lógica tal cual estaba en index.html, pero esa lógica en sí nunca se probó
    contra la API real de World Office (solo contra una API simulada). Configurar `WO_API_TOKEN` y
    `APP_ACCESS_KEY` en Vercel → "Conectar" con la clave → revisar catálogos en rojo → "Simular" →
-   enviar 2-3 documentos. Confirmar con contabilidad los códigos WO de los prefijos `RCR-A`/`RCL-A`
-   (`WO_CONFIG.prefijoWO`, la plantilla admite máximo 4 caracteres) y las cuentas de los recibos.
+   enviar 2-3 documentos. Los prefijos `RCR-A`/`RCL-A` se llaman `RCRA`/`RCLA` en World Office
+   (`WO_CONFIG.prefijoWO`, confirmado 2026-10-19). Falta confirmar con contabilidad las cuentas de los recibos.
 4. **Desplegar en Vercel** — `vercel.json` ya existe en esta carpeta, pero como el proyecto vive en
    `LILIAN/rehabilitar-angular/` y `LILIAN/` tiene su propio `vercel.json` (el del index.html en
    producción), el proyecto de Vercel para Angular debe tener **Root Directory =
@@ -232,3 +253,44 @@ Notas de `vercel.json` (diferencias con el de `LILIAN/vercel.json` del index.htm
   usuario la movió de vuelta dentro (2026-10-07). `index.html`/`vercel.json`/`CLAUDE.md` siguen en
   la raíz de `LILIAN/`, como archivos hermanos de esta carpeta — no se tocan ni se referencian desde
   aquí, así que la ubicación relativa no afecta nada del código.
+
+## Notas contables (asume paciente / asume entidad) — pestaña «Notas contables»
+
+- Página `pages/notas-contables`, ruta `/notas-contables` (con `authGuard`), ítem «Notas contables» en el menú.
+- **Desde la agenda** (solo citas CUMPLIDAS, valores de la REFERENCIA «TAR · PAC · ENT» o «PART»): `AP`/`APL` (Débito 13990501,
+  Crédito 4255990x) y `AE`/`AEL` (Débito 13990502, Crédito 4250990x). Lilian = PUNTO ATENCION «LILIAN ARRAZOLA».
+- **Desde el diario de caja**: `APR`/`APLR` = reversión de asume paciente (Débito 4255990x, Crédito 13990501), una línea por factura
+  R/COPG (Rehabilitar) o COPL/LA (Lilian) facturada, con lo que pagó el paciente (sin pagos de entidad, anticipo copago, sin valor ni ajustes).
+- `AER`/`AELR` (reversión de asume entidad): pendientes, falta la regla de contabilidad.
+- Reglas en `core/utils/notas-contables.util.ts`; plantilla oficial `public/plantillas-wo/PlantillaNotasDeContabilidad.xlsx`
+  llenada por `core/utils/world-office-notas.util.ts` (encabezados verificados, lista «Forma de Pago» y firma «NC» conservadas).
+- Verificado contra las notas ya cargadas en World Office: NC APL jun–sep (42 notas) idéntica salvo el centro «MedPlus» → «Med plus»
+  (nombre de la tabla C COSTOS); NC APR may–sep (103 notas) con el mismo contenido salvo 5 facturas que la nota manual no incluyó
+  y 2 líneas con centro distinto.
+- La numeración sugerida sigue las últimas notas (APL 405, APR 433) y se recuerda en este navegador; «Ya la cargué» avanza el consecutivo.
+- Pacientes nuevos: reutiliza la revisión de terceros y la plantilla de terceros de World Office (tercero de cada línea = paciente).
+- «⬇ Plantilla de notas completa»: un solo PlantillaNotasDeContabilidad con todos los prefijos generados (para revisar en Excel o cargar de una vez).
+- Envío por API (Simular / Enviar a World Office): `POST /contabilidad/crearDocContable` con `documentoTipo: 'NC'` (el mismo servicio de los
+  recibos, ya en la lista blanca de api/worldoffice.js; no se agregó ningún endpoint). Prefijos NC leídos del catálogo, control de duplicados
+  por «NOTA|EMPRESA|PREFIJO-NÚMERO» en el servidor y por `listarDocContable`, bitácora propia y la numeración avanza con lo creado.
+
+## Correcciones del prompt maestro (paso 22)
+
+- **Diferencia no conciliada:** salía en 0 porque los documentos **anulados** (ESTADO = A) se sumaban como anticipo / pago /
+  crédito y tapaban la diferencia real. Ahora no suman (siguen en «Total reporte de caja», como en el reporte), la resta se
+  redondea a centavos y hay estado explícito: CUADRA, PENDIENTE, EXCEDENTE o SIN MOVIMIENTOS (`diferenciaNoConciliada`).
+- **Total asume paciente** (antes «Recaudo real (caja)», que mezclaba anticipos recibidos y pagos de entidad) = pago del día +
+  anticipo descuento + crédito deuda, sin anulados. Coincide con la regla «B1 Asume paciente» del consolidado de caja.
+- **Tarifario:** «TAR x PACIENTE y ENTIDAD z» dejaba PAC/ENT en 0; ahora se leen. «CORTESIA» = tarifa detectada 0/0/0.
+- **Registros anulados:** tabla con documento, fecha, fecha registro, paciente, forma de pago y valor en el Resumen y en el Excel.
+- **Paciente × servicio:** «Ver servicios» por paciente en Conciliar (agrupa por documento de identidad, con control de totales)
+  y búsqueda por paciente / documento / servicio en «Por servicio».
+- **Ciudad automática:** solo si la dirección termina con el nombre exacto de una ciudad de la lista de World Office; queda aviso para revisar.
+- **World Office:** estado «PENDIENTE DE CONFIRMAR» cuando el envío salió y no hubo respuesta (posible creación); el backend responde
+  504 en ese caso. El «ERROR 003» de facturas sigue pendiente de la respuesta de soporte de World Office.
+- Nombres: «Financiero (reporte de caja)», «Total venta (agenda)» (se conserva, a pedido del usuario), «Total asume paciente», «Total reporte de caja», «(Asume paciente)»
+  en pago del día / anticipo descuento / crédito deuda, «Facturado sin recaudo — crédito de deuda».
+- **Decisiones posteriores (paso 22 v3):** el resumen cuenta solo citas CUMPLIDAS; el asume paciente de caja se limita a facturas
+  R/COPG/COPL/LA de pacientes (sin RCL-A ni terceros con NIT) y se muestra cómo se compone el total del reporte (asume paciente +
+  abonos a deuda + anticipos recibidos + entidades + anulados + otros = total); la fecha/motivo de anulación sale de la cabecera de
+  facturación si se sube; «Por servicio» agrupa por servicio base (sin «(cédula nombre)», cola NUA ni tarifa).

@@ -95,11 +95,40 @@ export interface OrigenTarifas {
   conNit: number; conNitMov: number;
   credito: number; anticipoDescuento: number; recaudoReal: number;
   radicadoEntidad: number; facturadoEntidadConsumo: number; tarifario: TarifarioEntry[];
+  /** Movimientos de caja con ESTADO = A: se muestran con su valor original pero NO suman en ningún indicador. */
+  anulados: RegistroAnulado[];
+  /** Movimientos de caja leídos (con o sin valor), para distinguir «sin movimientos» de «cuadra en cero». */
+  cajaMovimientos: number;
+  /** Citas del reporte de agenda que no están CUMPLIDAS: no suman venta. */
+  citasNoCumplidas: number;
+  /** Lo que el reporte de caja trae y no es «asume paciente» (anulados aparte): explica el total del reporte. */
+  fueraAsumePaciente: { abonosDeuda: number; anticiposRecibidos: number; entidades: number; otros: number };
 }
+
+/** Un registro anulado del reporte de caja, con los datos que trae el propio reporte. */
+export interface RegistroAnulado {
+  documento: string;
+  /** FECHA del documento en el reporte de caja (AAAA-MM-DD). */
+  fecha: string;
+  /** FECHA REGISTRO del reporte (cuándo se registró en Medifolios), si viene. */
+  fechaRegistro: string;
+  id: string;
+  nombre: string;
+  formaPago: string;
+  /** Valor original del documento; no suma en los totales activos. */
+  valor: number;
+}
+
+/** Estado de la «Diferencia no conciliada»: separa «cuadra» de «no hay datos que comparar». */
+export type EstadoDiferencia = 'CUADRA' | 'PENDIENTE' | 'EXCEDENTE' | 'SIN MOVIMIENTOS';
 
 export interface PuenteAgenda {
   totalVenta: number; sesiones: number; pac: number; ent: number;
   pagoDelDia: number; anticipoDescuento: number; credito: number; difNoConciliada: number;
+  /** CUADRA (0), PENDIENTE (falta conciliar > 0), EXCEDENTE (< 0) o SIN MOVIMIENTOS (no hay nada que comparar). */
+  estadoDiferencia: EstadoDiferencia;
+  /** Total asume paciente según el reporte de caja = pago del día + anticipo descuento + crédito deuda (sin anulados). */
+  totalAsumePaciente: number;
   recaudoAgenda: number; recaudoReal: number; difRecaudo: number;
   facturadoEntidad: number; noFacturadoEntidad: number;
 }

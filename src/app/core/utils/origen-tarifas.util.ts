@@ -6,9 +6,9 @@
  * REFERENCIA (agenda), ITEMS (caja) y DESCRIPCION (consumo).
  */
 import { TipoFuente } from '../models/records.model';
-import { OrigenTarifas, PuenteAgenda } from '../models/conciliacion-resultado.model';
+import { EstadoDiferencia, OrigenTarifas, PuenteAgenda } from '../models/conciliacion-resultado.model';
 import { ArchivoCargado } from '../services/excel-import.service';
-import { findCol, normId, toNumber, up } from './normalizacion.util';
+import { findCol, normFecha, normId, normNombre, toNumber, up } from './normalizacion.util';
 import { limpiarServicio, extraerTarifa, itemsDeCampo, tarifaDeCampo } from './tarifa.util';
 import { esNit, normalizarFormaPago, prefijoDocumento } from './clasificacion.util';
 import { FP } from '../models/clasificacion.model';
@@ -20,12 +20,15 @@ const CAMPO_SERVICIO: Record<TipoFuente, string[]> = {
 };
 
 /**
- * PAGO DEL DIA = lo que se pagó hoy en caja contra un documento de servicio.
- * Documentos con prefijo COPG, COPL, R y RCL-A, pagados en efectivo, tarjeta o
- * transferencia (Bancolombia Lilian/Rehabilitar y Davivienda). Los prefijos ya
- * dejan fuera la cartera de las aseguradoras (RCE, RCEL, LA).
+ * ASUME PACIENTE EN CAJA (pago del día, anticipo descuento y crédito deuda) = lo que el paciente
+ * asume en la facturación de su servicio: documentos de factura R, COPG, COPL y LA de terceros con
+ * cédula (no NIT de entidad), sin anulados. Es la misma regla del consolidado de caja («B1 Asume
+ * paciente») y de las notas contables APR/APLR.
+ *   - Fuera quedan los abonos a deuda (RCR-A, RCL-A), los anticipos recibidos (ANTR, ANTL),
+ *     la cartera de entidades (RCE, RCEL o tercero con NIT) y los anulados.
+ * PAGO DEL DIA = esa facturación pagada hoy en efectivo, tarjeta o transferencia.
  */
-const PREF_PAGO_DIA = ['COPG', 'COPL', 'R', 'RCL-A'];
+const PREF_FACTURA_PACIENTE = ['COPG', 'COPL', 'R', 'LA'];
 const FORMAS_PAGO_DIA = [FP.EFECTIVO, FP.TARJETA, FP.BC_LILIAN, FP.BC_REHAB, FP.DAV];
 
 /**
@@ -44,6 +47,8 @@ export function analizarOrigenTarifas(raw: Partial<Record<TipoFuente, ArchivoCar
     conNit: 0, conNitMov: 0,
     credito: 0, anticipoDescuento: 0, recaudoReal: 0,
     radicadoEntidad: 0, facturadoEntidadConsumo: 0, tarifario: [],
+    anulados: [], cajaMovimientos: 0, citasNoCumplidas: 0,
+    fueraAsumePaciente: { abonosDeuda: 0, anticiposRecibidos: 0, entidades: 0, otros: 0 },
   };
   const catalogo = new Map<string, { servicio: string; t: ReturnType<typeof extraerTarifa>; ag: number; cj: number; co: number }>();
   const formas = new Map<string, number>();
@@ -60,6 +65,9 @@ export function analizarOrigenTarifas(raw: Partial<Record<TipoFuente, ArchivoCar
     const cId = findCol(headers, ['ID. TERCERO', 'ID TERCERO', 'IDENTIFICACION']);
     const cEstatus = findCol(headers, ['ESTATUS', 'ESTADO']);
     const cNeto = findCol(headers, ['VLR. NETO', 'VALOR NETO']);
+    const cFecha = findCol(headers, ['FECHA', 'FECHA FACTURA']);
+    const cFechaReg = findCol(headers, ['FECHA REGISTRO']);
+    const cNombre = findCol(headers, ['NOM TERCERO', 'NOMBRE PACIENTE', 'NOMBRE CLIENTE']);
     const filas: ReturnType<typeof tarifaDeCampo>[] = [];
 
     for (let n = fEnc; n < src.matriz.length; n++) {
@@ -77,6 +85,10 @@ export function analizarOrigenTarifas(raw: Partial<Record<TipoFuente, ArchivoCar
       });
 
       if (tipo === 'AGENDA') {
+        // Solo las citas CUMPLIDAS generan venta (igual que las notas contables). Si el reporte no
+        // trae ESTADO se cuentan todas, como antes.
+        const estado = up(cEstatus >= 0 ? fila[cEstatus] : '');
+        if (estado && estado !== 'CUMPLIDA') { out.citasNoCumplidas++; continue; }
         out.agenda.sesiones++;
         if (t.detectado) { out.agenda.detectadas++; out.agenda.tar += t.tar || 0; out.agenda.pac += t.pac || 0; out.agenda.ent += t.ent || 0; }
       }
@@ -89,18 +101,45 @@ export function analizarOrigenTarifas(raw: Partial<Record<TipoFuente, ArchivoCar
       if (tipo === 'CAJA') {
         const valor = cValor >= 0 ? toNumber(fila[cValor]) || 0 : 0;
         const cruda = up(cForma >= 0 ? fila[cForma] : '').replace(/\s+/g, ' ').trim();
+        const docTxt = cDoc >= 0 ? String(fila[cDoc] ?? '').trim() : '';
+        if (!cruda && !docTxt) continue; // filas vacías o de totales
+        out.cajaMovimientos++;
+        // «Total reporte de caja»: la suma de VALOR tal como la trae el reporte (incluye anulados).
         if (cruda) { formas.set(cruda, (formas.get(cruda) || 0) + valor); out.totalCaja += valor; }
+        // Un documento anulado (ESTADO = A) se conserva con su valor original para consultarlo,
+        // pero no cuenta como pago, anticipo, crédito ni recaudo: no es una operación activa.
+        if (up(cEstatus >= 0 ? fila[cEstatus] : '') === 'A') {
+          out.anulados.push({
+            documento: docTxt, fecha: normFecha(cFecha >= 0 ? fila[cFecha] : ''),
+            fechaRegistro: cFechaReg >= 0 ? String(fila[cFechaReg] ?? '').trim() : '',
+            id: normId(cId >= 0 ? fila[cId] : ''), nombre: normNombre(cNombre >= 0 ? fila[cNombre] : ''),
+            formaPago: cruda, valor,
+          });
+          continue;
+        }
         const canon = normalizarFormaPago(cruda);
-        if (canon === FP.CREDITO) out.credito += valor;
-        if (canon === FP.ANT_DESC) out.anticipoDescuento += valor;
         if (FORMAS_RECAUDO_REAL.indexOf(canon) >= 0) out.recaudoReal += valor;
-        const pre = prefijoDocumento(cDoc >= 0 ? String(fila[cDoc] ?? '') : '');
-        if (PREF_PAGO_DIA.indexOf(pre) >= 0 && FORMAS_PAGO_DIA.indexOf(canon as any) >= 0) {
-          out.pagoDelDia += valor; out.pagoDelDiaMov++;
-          out.pagoDelDiaPorPrefijo[pre] = (out.pagoDelDiaPorPrefijo[pre] || 0) + valor;
-          // Se cuentan aparte los terceros con NIT: entran en el total, pero conviene
-          // tenerlos a la vista porque son entidades pagando en caja.
-          if (esNit(normId(cId >= 0 ? fila[cId] : ''))) { out.conNit += valor; out.conNitMov++; }
+        const pre = prefijoDocumento(docTxt);
+        const items = up(cServ >= 0 ? fila[cServ] : '');
+        const esEntidad = esNit(normId(cId >= 0 ? fila[cId] : '')) || /^ABONO DOCUMENTO|ABONO\s+DOCUMENTO/.test(items) || pre === 'RCE' || pre === 'RCEL';
+        let asume = false;
+        if (PREF_FACTURA_PACIENTE.indexOf(pre) >= 0 && !esEntidad) {
+          if (canon === FP.CREDITO) { out.credito += valor; asume = true; }
+          else if (canon === FP.ANT_DESC) { out.anticipoDescuento += valor; asume = true; }
+          else if (FORMAS_PAGO_DIA.indexOf(canon as any) >= 0) {
+            out.pagoDelDia += valor; out.pagoDelDiaMov++; asume = true;
+            out.pagoDelDiaPorPrefijo[pre] = (out.pagoDelDiaPorPrefijo[pre] || 0) + valor;
+          }
+        }
+        if (!asume) {
+          // Lo que no es «asume paciente» se explica aparte, para que el total del reporte cuadre.
+          const f = out.fueraAsumePaciente;
+          if (esEntidad) {
+            f.entidades += valor;
+            if (PREF_FACTURA_PACIENTE.indexOf(pre) >= 0) { out.conNit += valor; out.conNitMov++; }
+          } else if (pre === 'RCR-A' || pre === 'RCL-A') f.abonosDeuda += valor;
+          else if (pre === 'ANTR' || pre === 'ANTL') f.anticiposRecibidos += valor;
+          else f.otros += valor;
         }
       }
     }
@@ -113,16 +152,34 @@ export function analizarOrigenTarifas(raw: Partial<Record<TipoFuente, ArchivoCar
   return out;
 }
 
+/** Pesos con centavos sin errores de coma flotante (0.1 + 0.2 ≠ 0.3). */
+export const redondearCOP = (n: number): number => Math.round((n || 0) * 100) / 100;
+
+/**
+ * DIFERENCIA NO CONCILIADA = asume paciente de la agenda − (pago del día + anticipo descuento + crédito deuda).
+ * Positiva: falta conciliar (lo agendado no aparece en caja). Negativa: en caja hay más de lo agendado.
+ * Si no hay citas con tarifa ni movimientos de caja, no es «cuadra»: es «sin movimientos».
+ */
+export function diferenciaNoConciliada(pacAgenda: number, caja: { pagoDelDia: number; anticipoDescuento: number; credito: number },
+  hayDatos: boolean): { valor: number; estado: EstadoDiferencia } {
+  const valor = redondearCOP(pacAgenda - (caja.pagoDelDia + caja.anticipoDescuento + caja.credito));
+  if (!hayDatos) return { valor: 0, estado: 'SIN MOVIMIENTOS' };
+  if (Math.abs(valor) < 0.005) return { valor: 0, estado: 'CUADRA' };
+  return { valor, estado: valor > 0 ? 'PENDIENTE' : 'EXCEDENTE' };
+}
+
 /** El puente entre lo vendido en la agenda y lo recaudado en caja. */
 export function puenteAgenda(o: OrigenTarifas, facturadoEntidadManual: number): PuenteAgenda {
   const fe = isFinite(facturadoEntidadManual) && facturadoEntidadManual > 0
     ? facturadoEntidadManual
     : o.facturadoEntidadConsumo || o.radicadoEntidad;
+  const totalAsumePaciente = redondearCOP(o.pagoDelDia + o.anticipoDescuento + o.credito);
+  const dif = diferenciaNoConciliada(o.agenda.pac, o, o.agenda.detectadas > 0 || (o.cajaMovimientos || 0) > 0);
   return {
     totalVenta: o.agenda.tar, sesiones: o.agenda.sesiones,
     pac: o.agenda.pac, ent: o.agenda.ent,
     pagoDelDia: o.pagoDelDia, anticipoDescuento: o.anticipoDescuento, credito: o.credito,
-    difNoConciliada: o.agenda.pac - (o.pagoDelDia + o.anticipoDescuento + o.credito),
+    difNoConciliada: dif.valor, estadoDiferencia: dif.estado, totalAsumePaciente,
     recaudoAgenda: o.agenda.tar, recaudoReal: o.recaudoReal, difRecaudo: o.recaudoReal - o.agenda.tar,
     facturadoEntidad: fe, noFacturadoEntidad: o.agenda.ent - fe,
   };

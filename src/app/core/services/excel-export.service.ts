@@ -77,13 +77,13 @@ export class ExcelExportService {
 
     encabezar(wsRes, ['INGRESOS POR VENTA DE REPORTE DE AGENDA', 'COP', 'OBSERVACIÓN']);
     const filas: FilaResumen[] = [
-      ['t', 'TOTAL VENTA', P!.totalVenta, 'ASUME PACIENTE + ASUME ENTIDAD'],
+      ['t', 'TOTAL VENTA (AGENDA)', P!.totalVenta, 'ASUME PACIENTE + ASUME ENTIDAD'],
       ['t', 'TOTAL SESIONES', P!.sesiones, 'Citas del reporte de agenda'],
       ['t', 'ASUME PACIENTE', P!.pac, ''],
-      ['s', '   FACTURADO CON RECAUDO — PAGO DEL DIA', P!.pagoDelDia, 'FACTURADO · SI PAGADO O SI RECAUDO. Caja: documentos COPG, COPL, R y RCL-A en efectivo, tarjeta o transferencia (Bancolombia Lilian/Rehabilitar y Davivienda).'],
-      ['s', '   FACTURADO SIN RECAUDO — ANTICIPO DESCUENTO', P!.anticipoDescuento, 'FACTURADO · NO PAGADO O NO RECAUDO'],
-      ['s', '   NO FACTURADO ASUME PACIENTE — CREDITO DEUDA', P!.credito, 'NO FACTURADO · el paciente queda debiendo'],
-      ['s', '   DIFERENCIA NO CONCILIADA', P!.difNoConciliada, 'NO CONCILIADO · agenda menos las tres líneas anteriores. Negativo = se facturó o recaudó más de lo agendado.'],
+      ['s', '   FACTURADO CON RECAUDO — PAGO DEL DÍA (ASUME PACIENTE)', P!.pagoDelDia, 'FACTURADO · SI PAGADO O SI RECAUDO. Caja: facturas R, COPG, COPL y LA de pacientes (sin NIT ni anulados) en efectivo, tarjeta o transferencia.'],
+      ['s', '   FACTURADO SIN RECAUDO — ANTICIPO DESCUENTO (ASUME PACIENTE)', P!.anticipoDescuento, 'FACTURADO · NO PAGADO O NO RECAUDO'],
+      ['s', '   FACTURADO SIN RECAUDO — CRÉDITO DE DEUDA (ASUME PACIENTE)', P!.credito, 'El paciente queda debiendo'],
+      ['s', '   DIFERENCIA NO CONCILIADA', P!.difNoConciliada, `${P!.estadoDiferencia} · agenda menos las tres líneas anteriores. Negativo = se facturó o recaudó más de lo agendado. Los documentos anulados no suman.`],
       ['t', 'ASUME ENTIDAD', P!.ent, ''],
       ['s', '   FACTURADO A ENTIDAD', P!.facturadoEntidad, 'Consumo: VLR. NETO de los servicios ya facturados (ESTATUS = F) en convenio — lo que se le carga a la aseguradora.'],
       ['s', '   NO FACTURADO ASUME ENTIDAD', P!.noFacturadoEntidad, 'PENDIENTE POR FACTURAR'],
@@ -97,19 +97,37 @@ export class ExcelExportService {
     });
 
     wsRes.addRow([]);
-    encabezar(wsRes, ['FINANCIERO — RECAUDO POR FORMA DE PAGO (ARCHIVO DE CAJA)', 'COP', '']);
+    encabezar(wsRes, ['FINANCIERO (REPORTE DE CAJA) — POR FORMA DE PAGO', 'COP', '']);
     O.formasPago.forEach((f) => { const r = wsRes.addRow([f.forma, f.valor]); r.getCell(2).numFmt = MONEDA; });
-    const rTot = wsRes.addRow(['Total general', O.totalCaja]);
+    const rTot = wsRes.addRow(['TOTAL REPORTE DE CAJA', O.totalCaja]);
     rTot.getCell(2).numFmt = MONEDA;
     rTot.getCell(1).font = { name: 'Arial', bold: true }; rTot.getCell(2).font = { name: 'Arial', bold: true };
     ([
-      ['RECAUDO DE AGENDA', P!.recaudoAgenda, 'Valor de los servicios agendados (tarifa total de la agenda)'],
-      ['RECAUDO REAL', P!.recaudoReal, 'Efectivo + tarjeta + transferencias Bancolombia y Davivienda (Lilian y Rehabilitar). No incluye anticipo descuento, crédito deuda, ajuste de cartera ni transferencias facturación.'],
+      ['TOTAL ASUME PACIENTE', P!.totalAsumePaciente, 'Pago del día + anticipo descuento + crédito deuda del reporte de caja (sin documentos anulados).'],
     ] as [string, number, string][]).forEach(([lab, val, nota]) => {
       const r = wsRes.addRow([lab, val, nota]);
       r.getCell(2).numFmt = MONEDA;
       r.getCell(1).font = { name: 'Arial', bold: true }; r.getCell(2).font = { name: 'Arial', bold: true };
       r.getCell(3).font = NOTA; r.getCell(3).alignment = { wrapText: true, vertical: 'middle' };
+    });
+
+    wsRes.addRow([]);
+    encabezar(wsRes, ['DE DÓNDE SALE EL TOTAL DEL REPORTE DE CAJA', 'COP', '']);
+    const anulado = O.anulados.reduce((t, a) => t + a.valor, 0);
+    const fu = O.fueraAsumePaciente;
+    ([
+      ['Total asume paciente', P!.totalAsumePaciente], ['Abonos a deuda (RCR-A, RCL-A)', fu.abonosDeuda],
+      ['Anticipos recibidos (ANTR, ANTL)', fu.anticiposRecibidos], ['Pagos y cartera de entidades (NIT, RCE, RCEL)', fu.entidades],
+      ['Documentos anulados', anulado], ['Otros movimientos', fu.otros], ['TOTAL REPORTE DE CAJA', O.totalCaja],
+    ] as [string, number][]).forEach(([lab, val]) => { const r = wsRes.addRow([lab, val]); r.getCell(2).numFmt = MONEDA; if (/^TOTAL/.test(lab)) r.font = { name: 'Arial', bold: true }; });
+    if (O.citasNoCumplidas) wsRes.addRow([`${O.citasNoCumplidas} cita(s) no CUMPLIDAS del reporte de agenda no suman en la venta.`]).getCell(1).font = NOTA;
+
+    wsRes.addRow([]);
+    encabezar(wsRes, ['REGISTROS ANULADOS (NO SUMAN)', 'COP', 'FECHA · FECHA REGISTRO · PACIENTE · FORMA DE PAGO']);
+    if (!O.anulados.length) wsRes.addRow(['Sin documentos anulados en el reporte de caja']);
+    O.anulados.forEach((a) => {
+      const r = wsRes.addRow([a.documento, a.valor, [a.fecha, a.fechaRegistro, a.nombre, a.formaPago].filter(Boolean).join(' · ')]);
+      r.getCell(2).numFmt = MONEDA; r.getCell(3).font = NOTA;
     });
 
     wsRes.addRow([]);
@@ -122,7 +140,7 @@ export class ExcelExportService {
     wsRes.addRow([]);
     wsRes.addRow(['DEFINICIONES USADAS']).getCell(1).font = { name: 'Arial', bold: true };
     ([
-      ['Ingresos por venta (agenda)', 'Puente entre lo vendido en la agenda y lo recaudado en caja. TOTAL VENTA, ASUME PACIENTE, ASUME ENTIDAD y TOTAL SESIONES salen de la hoja Agenda (original). PAGO DEL DIA: hoja Caja (original), documentos con prefijo COPG, COPL, R y RCL-A, forma de pago EFECTIVO, TARJETA o transferencia (Bancolombia Lilian, Bancolombia Rehabilitar, Davivienda). Los prefijos ya dejan fuera la cartera de las aseguradoras (RCE, RCEL, LA). ANTICIPO DESCUENTO y CREDITO DEUDA: suma por FORMA PAGO del archivo de caja; el crédito deuda va como NO FACTURADO porque el paciente queda debiendo. DIFERENCIA NO CONCILIADA: agenda menos las tres líneas.'],
+      ['Ingresos por venta (agenda)', 'Puente entre lo vendido en la agenda y lo recaudado en caja. TOTAL VENTA (AGENDA), ASUME PACIENTE, ASUME ENTIDAD y TOTAL SESIONES salen de la hoja Agenda (original). Solo citas CUMPLIDAS. PAGO DEL DIA, ANTICIPO DESCUENTO y CREDITO DEUDA: hoja Caja (original), facturas R, COPG, COPL y LA de pacientes (sin terceros con NIT ni anulados); pago del día = efectivo, tarjeta o transferencia. Quedan fuera abonos a deuda (RCR-A, RCL-A), anticipos recibidos (ANTR, ANTL) y cartera de entidades; el crédito deuda va como FACTURADO SIN RECAUDO porque el paciente queda debiendo. Los documentos anulados (ESTADO = A) no suman. DIFERENCIA NO CONCILIADA: agenda menos las tres líneas.'],
       ['Financiero', 'Tabla dinámica de la hoja Caja (original): suma de VALOR agrupada por FORMA PAGO, con los nombres tal como los reporta el archivo. Las formas que suman $0 (ANTICIPO COPAGO / CUOTA MODERADORA, SIN VALOR) son marcas de control, no recaudo.'],
       ['Desglose tarifario', 'Se calcula sobre la hoja Agenda (original): suma de VALOR TARIFA / ASUME PACIENTE / ASUME ENTIDAD de las citas agendadas. Es el valor de los servicios PROGRAMADOS.'],
       ['Tarifa desde el texto', 'La tarifa no está en ninguna tabla aparte: viene escrita dentro del nombre del servicio. Patrones: «TAR 40.900 PAC 20.000 ENT 20.900» (convenio); «PACIENTE 25.000 ENTIDAD 0» (convenio particular); «PART 32.000» (particular: el paciente asume todo, PAC = tarifa y ENT = 0); «PAC 0 ENT 39.240» (sin TAR: la tarifa es la suma). «ABONO DOCUMENTO ...» no describe un servicio y queda sin tarifa.'],

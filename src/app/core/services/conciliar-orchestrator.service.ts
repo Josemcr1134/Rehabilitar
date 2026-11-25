@@ -11,7 +11,14 @@ import {
   fuentesCode,
 } from '../utils/comparacion.util';
 import { normServicio, up } from '../utils/normalizacion.util';
-import { servicioBase, extraerTarifa, tarifaDeFuente, compararNumeros } from '../utils/tarifa.util';
+import { servicioBase, extraerTarifa, tarifaDeFuente, compararNumeros, limpiarServicio } from '../utils/tarifa.util';
+
+/**
+ * Llave del servicio para «Conciliación por servicio»: el mismo servicio se escribe distinto en
+ * agenda (REFERENCIA), caja (ITEMS, a veces con «(cédula nombre)» delante y la cola «- NUA…») y
+ * consumo (DESCRIPCION). Se quitan esos adornos y la cola de tarifa para que quede en UNA fila.
+ */
+export const claveServicio = (texto: unknown): string => servicioBase(limpiarServicio(texto)).replace(/[\s.-]+$/, '').trim();
 import { clasificarMovimiento, esNit } from '../utils/clasificacion.util';
 import { analizarOrigenTarifas, puenteAgenda } from '../utils/origen-tarifas.util';
 import { AppStateService } from './app-state.service';
@@ -100,12 +107,12 @@ export class ConciliarOrchestratorService {
       else if (!s.nombre) s.nombre = nombre;
       return s;
     };
-    agenda.forEach((r) => { ensureServ(r.id, r.nombre, normServicio(r.referencia)).ag++; });
+    agenda.forEach((r) => { ensureServ(r.id, r.nombre, claveServicio(r.referencia)).ag++; });
     // Se guarda también el registro de caja completo: la llave de agrupación es el texto
     // literal de ITEMS, así que los movimientos de un mismo grupo comparten el mismo PAC
     // declarado — eso permite detectar el cobro partido en varios recibos.
-    cajaRelevante.forEach((r) => { const g = ensureServ(r.id, r.nombre, r.items); g.cj++; g.cajaRecs.push(r); });
-    consumo.forEach((r) => { ensureServ(r.id, r.nombre, r.descripcion).co++; });
+    cajaRelevante.forEach((r) => { const g = ensureServ(r.id, r.nombre, claveServicio(r.items)); g.cj++; g.cajaRecs.push(r); });
+    consumo.forEach((r) => { ensureServ(r.id, r.nombre, claveServicio(r.descripcion)).co++; });
 
     return [...servMap.values()]
       .map((s) => ({ ...s, estado: estadoConciliacion(s.ag, s.cj, s.co) }))
@@ -283,7 +290,7 @@ export class ConciliarOrchestratorService {
         valor: r.valor,
         servicio: /^ABONO DOCUMENTO/.test(up(r.items)) ? r.items : servicioBase(r.items),
         tar: t.detectado ? t.tar : null, pac: t.detectado ? t.pac : null, ent: t.detectado ? t.ent : null,
-        tipoTarifa: !t.detectado ? '' : t.copagoExplicito ? 'CONVENIO' : t.ent ? 'MIXTA' : 'PARTICULAR',
+        tipoTarifa: !t.detectado ? '' : t.tipo === 'CORTESIA' ? 'CORTESIA' : t.copagoExplicito ? 'CONVENIO' : t.ent ? 'MIXTA' : 'PARTICULAR',
         recaudo, resto: c.hayRecaudo ? 0 : r.valor,
         destino: c.hayRecaudo ? '' : c.destino,
         clausula: c.clausula,

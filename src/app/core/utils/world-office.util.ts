@@ -168,12 +168,16 @@ export function prepararDocumentos(caja: CajaRecord[]): PreparacionWO {
         const preRef = up(ref[1]);
         abonaA = `FV ${WO_CONFIG.prefijoWO[preRef] || preRef} ${ref[2]}`;
       }
-      // El documento de Medifolios va en el concepto: deja rastro en WO y permite detectar duplicados.
-      const concepto = `${esAnticipo ? WO_CONFIG.conceptoReciboAnticipo : WO_CONFIG.conceptoReciboDeuda} ${doc}`;
+      // El documento va en el concepto con el prefijo de World Office, como lo registra contabilidad
+      // («PAGO DEUDA RCLA-2247»): deja rastro en WO y permite detectar duplicados.
+      const docWO = base.numero !== null ? `${base.prefijoWO}-${base.numero}` : doc;
+      const concepto = `${esAnticipo ? WO_CONFIG.conceptoReciboAnticipo : WO_CONFIG.conceptoReciboDeuda} ${docWO}`;
       const asientos: Asiento[] = filas.filter((f) => Math.round(Number(f.valor) || 0) !== 0).map((f) => {
         const fc = normalizarFormaPago(f.formaPago);
         return { naturaleza: 'D', cuenta: WO_CONFIG.cuentaDebitoPorForma[fc], valor: Number(f.valor) || 0, forma: fc };
       });
+      const sinFormaContable = [...new Set(asientos.filter((a) => a.forma && !WO_CONFIG.formaPagoContable[a.forma]).map((a) => a.forma!))];
+      if (sinFormaContable.length) base.avisos.push(`Falta definir la forma de pago contable de ${sinFormaContable.join(', ')} (WO_CONFIG.formaPagoContable): la plantilla de recibos la exige`);
       asientos.push({ naturaleza: 'C', cuenta: esAnticipo ? WO_CONFIG.cuentaCreditoAnticipo : WO_CONFIG.cuentaCreditoDeuda, valor, ...(abonaA ? { abonaA } : {}) });
       const envioAPI = esAnticipo || WO_CONFIG.recibosDeudaPorAPI;
       if (!envioAPI) base.avisos.push(`Abono a ${abonaA}: va en la plantilla Excel (cruce «Abona A»), no por la API`);
